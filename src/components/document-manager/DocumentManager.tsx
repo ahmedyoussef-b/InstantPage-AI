@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Search, 
   Database, 
@@ -10,7 +11,9 @@ import {
   HardDrive,
   AlertCircle,
   CheckCircle2,
-  LayoutGrid
+  LayoutGrid,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +23,7 @@ import FileTree from './FileTree';
 import UploadZone from './UploadZone';
 import SyncStatus from './SyncStatus';
 import { FileNode } from '@/lib/document-manager/config';
+import { useWebSocket, WSEvent } from '@/hooks/useWebSocket';
 
 export default function DocumentManager() {
   const [tree, setTree] = useState<FileNode[]>([]);
@@ -28,6 +32,16 @@ export default function DocumentManager() {
   const [selectedPath, setSelectedPath] = useState('');
   const [stats, setStats] = useState({ files: 0, folders: 0, size: '0 MB' });
   const { toast } = useToast();
+
+  // Gestion des événements temps réel
+  const handleWSEvent = useCallback((event: WSEvent) => {
+    if (event.type === 'REFRESH_TREE' || event.type === 'FILE_ADDED' || event.type === 'FILE_DELETED') {
+      console.log(`[REALTIME] Signal reçu: ${event.type}. Rafraîchissement...`);
+      loadTree();
+    }
+  }, []);
+
+  const { isConnected } = useWebSocket(handleWSEvent);
 
   useEffect(() => {
     loadTree();
@@ -115,10 +129,28 @@ export default function DocumentManager() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <SyncStatus />
+      <div className="flex flex-col md:flex-row gap-4">
+        <SyncStatus />
+        <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl flex-1">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl ${isConnected ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+              </div>
+              <div>
+                <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Flux Direct</p>
+                <p className="text-xs font-bold">{isConnected ? 'SYNCHRO ACTIVE' : 'MODE POLLING'}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Dernier Event</p>
+              <p className="text-[10px] font-medium text-gray-400">Aucun changement récent</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Side: Tree & Upload */}
         <div className="lg:col-span-2 space-y-6">
           <Card className="bg-white/5 border-white/5 text-white rounded-3xl overflow-hidden shadow-2xl">
             <div className="p-6 border-b border-white/5 flex items-center justify-between bg-black/20">
@@ -145,8 +177,8 @@ export default function DocumentManager() {
             <CardContent className="p-6 min-h-[400px]">
               {loading ? (
                 <div className="flex flex-col items-center justify-center h-64 text-gray-500 gap-4">
-                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                  <p className="text-[10px] font-black uppercase tracking-widest tracking-[0.2em]">Synchronisation avec ChromaDB...</p>
+                  <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
+                  <p className="text-[10px] font-black uppercase tracking-widest tracking-[0.2em]">Chargement des strates ChromaDB...</p>
                 </div>
               ) : (
                 <FileTree 
@@ -159,7 +191,6 @@ export default function DocumentManager() {
           </Card>
         </div>
 
-        {/* Right Side: Upload Zone */}
         <div className="space-y-6">
           <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-3xl p-6">
             <h3 className="text-xs font-black uppercase text-blue-400 mb-6 flex items-center gap-2 tracking-widest">
@@ -167,9 +198,9 @@ export default function DocumentManager() {
             </h3>
             <UploadZone targetPath={selectedPath} onUploadSuccess={loadTree} />
             <div className="mt-6 p-4 bg-black/20 rounded-2xl border border-white/5">
-              <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Instructions</p>
+              <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Instructions Sync</p>
               <p className="text-[10px] text-gray-400 leading-relaxed italic">
-                Sélectionnez un dossier dans l'arborescence pour cibler une collection spécifique, ou uploadez à la racine pour un classement automatique.
+                La synchronisation temps réel détecte les ajouts de fichiers et déclenche automatiquement l'indexation vectorielle dans la strate appropriée.
               </p>
             </div>
           </Card>
@@ -179,10 +210,10 @@ export default function DocumentManager() {
               <div className="p-2 bg-green-500/20 rounded-xl">
                 <CheckCircle2 className="w-4 h-4 text-green-500" />
               </div>
-              <p className="text-[10px] font-black uppercase text-gray-300 tracking-widest">Index Vectoriel Actif</p>
+              <p className="text-[10px] font-black uppercase text-gray-300 tracking-widest">Watcher Local Actif</p>
             </div>
             <p className="text-[10px] text-gray-500 leading-relaxed">
-              Le modèle <span className="text-blue-400 font-bold">nomic-embed-text</span> génère des embeddings à 768 dimensions pour une précision sémantique maximale.
+              Le service <span className="text-blue-400 font-bold">Chokidar</span> surveille les changements physiques pour garantir l'intégrité de la base vectorielle.
             </p>
           </Card>
         </div>
