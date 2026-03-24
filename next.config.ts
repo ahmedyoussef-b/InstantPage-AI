@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // On marque chromadb comme externe pour éviter que Webpack ne tente de parser 
+  // ses importations dynamiques (comme chromadb-default-embed depuis unpkg)
   serverExternalPackages: ['chromadb'],
   images: {
     remotePatterns: [

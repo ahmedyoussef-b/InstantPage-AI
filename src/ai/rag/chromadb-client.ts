@@ -1,5 +1,5 @@
 
-﻿// src/ai/rag/chromadb-client.ts
+// src/ai/rag/chromadb-client.ts
 // Client ChromaDB simplifié utilisant impérativement l'embedding local
 
 import { ChromaClient } from 'chromadb';
@@ -20,10 +20,12 @@ export async function getChromaClient(): Promise<ChromaClient> {
 export async function getCollection(collectionName: string = "centrale_equipements_principaux") {
   if (!collection) {
     const chromaClient = await getChromaClient();
+    // ✅ On récupère explicitement notre fonction d'embedding Ollama
     const embeddingFunction = getEmbeddingFunction();
     
     try {
-      // ✅ Toujours passer embeddingFunction pour éviter le chargement distant par défaut
+      // ✅ On passe toujours embeddingFunction pour empêcher ChromaDB de charger par défaut 
+      // chromadb-default-embed depuis unpkg.com, ce qui cause une erreur Webpack.
       collection = await chromaClient.getCollection({ 
         name: collectionName,
         embeddingFunction
