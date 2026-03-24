@@ -1,11 +1,10 @@
 import type {Metadata} from 'next';
 import './globals.css';
-import { SidebarProvider } from '@/components/ui/sidebar';
-import { Toaster } from '@/components/ui/toaster';
+import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'InstantPage AI',
-  description: 'AI-Powered Document Intelligence & Automation',
+  title: 'InstantPage - Rapid Next.js Web Development',
+  description: 'A modern, high-performance Next.js starter kit built for speed and elegance.',
 };
 
 export default function RootLayout({
@@ -14,17 +13,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="fr">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Code+Pro:wght@400;600&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body className="font-body antialiased">
-        <SidebarProvider>
+      <body className="font-body antialiased selection:bg-accent/30">
+        <div className="min-h-screen bg-background">
           {children}
-          <Toaster />
-        </SidebarProvider>
+        </div>
+        <Toaster />
       </body>
     </html>
   );

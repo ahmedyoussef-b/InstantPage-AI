@@ -1,40 +1,31 @@
-'use server';
+
 /**
- * @fileOverview A Genkit flow for dynamically generating step-by-step procedures or guidelines.
- *
- * - procedureHelp - A function that handles the generation of a procedure.
- * - ProcedureHelpInput - The input type for the procedureHelp function.
- * - ProcedureHelpOutput - The return type for the procedureHelp function.
+ * @fileOverview Flux d'aide contextuelle pour les procédures techniques.
+ * 
+ * - getProcedureHelp - Aide technique pour l'opérateur.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
 
 const ProcedureHelpInputSchema = z.object({
-  query: z.string().describe('The user\'s request for a step-by-step procedure or guidelines.'),
+  userName: z.string().default('Opérateur'),
+  stepTitle: z.string(),
+  instruction: z.string(),
+  problem: z.string(),
+  expectedValue: z.string(),
 });
 export type ProcedureHelpInput = z.infer<typeof ProcedureHelpInputSchema>;
 
 const ProcedureHelpOutputSchema = z.object({
-  procedure: z.string().describe('The generated step-by-step procedure or guidelines.'),
+  advice: z.string(),
+  safetyReminder: z.string().optional(),
 });
 export type ProcedureHelpOutput = z.infer<typeof ProcedureHelpOutputSchema>;
 
-export async function procedureHelp(input: ProcedureHelpInput): Promise<ProcedureHelpOutput> {
+export async function getProcedureHelp(input: ProcedureHelpInput): Promise<ProcedureHelpOutput> {
   return procedureHelpFlow(input);
 }
-
-const procedureHelpPrompt = ai.definePrompt({
-  name: 'procedureHelpPrompt',
-  input: {schema: ProcedureHelpInputSchema},
-  output: {schema: ProcedureHelpOutputSchema},
-  prompt: `You are an expert at creating clear, concise, and accurate step-by-step operational procedures and guidelines.
-Your task is to generate a detailed procedure based on the user's request. Ensure the procedure is easy to follow and covers all necessary steps.
-
-User Request: {{{query}}}
-
-Please provide the procedure in a step-by-step format, clearly outlining each action.`,
-});
 
 const procedureHelpFlow = ai.defineFlow(
   {
@@ -42,11 +33,23 @@ const procedureHelpFlow = ai.defineFlow(
     inputSchema: ProcedureHelpInputSchema,
     outputSchema: ProcedureHelpOutputSchema,
   },
-  async input => {
-    const {output} = await procedureHelpPrompt(input);
-    if (!output) {
-      throw new Error('Failed to generate procedure.');
-    }
-    return output;
+  async (input) => {
+    const response = await ai.generate({
+      system: `Tu es un expert en maintenance industrielle assistant un opérateur.
+      Ta mission est de l'aider à résoudre un problème spécifique lors d'une étape de procédure.
+      RÈGLES :
+      1. Sois très précis et technique.
+      2. Propose des solutions concrètes et actionnables immédiatement.
+      3. Si le problème semble dangereux, insiste sur la sécurité.`,
+      prompt: `L'opérateur rencontre un problème à l'étape : ${input.stepTitle}.
+      Instruction originale : ${input.instruction}
+      Valeur attendue : ${input.expectedValue}
+      Problème signalé : ${input.problem}`,
+    });
+
+    return {
+      advice: response.text,
+      safetyReminder: "Veuillez vérifier vos équipements de protection individuelle avant toute intervention."
+    };
   }
 );

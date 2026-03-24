@@ -1,175 +1,256 @@
-'use server';
+
 /**
- * @fileOverview A Genkit flow for intelligent document ingestion.
- * This flow extracts content from various document types, chunks it, generates embeddings,
- * and stores the chunks along with their embeddings and metadata in ChromaDB.
- *
- * - ingestDocument - A function that handles the document ingestion process.
- * - IngestDocumentInput - The input type for the ingestDocument function.
- * - IngestDocumentOutput - The return type for the ingestDocument function.
+ * @fileOverview Flux d'ingestion et de construction du graphe de connaissances (Logique Serveur).
+ * Intègre désormais l'indexation hiérarchique des concepts (Innovation 32.1).
+ * Optimisé pour la performance via exécution parallèle avec timeouts.
  */
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { ChromaDBManager, CollectionName, createStandardMetadata } from '@/ai/vector/chromadb-manager';
-
-// --- Schemas --- //
-
-const IngestDocumentInputSchema = z.object({
-  fileDataUri: z
-    .string()
-    .describe(
-      "The document content as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'. Supported mimetypes: 'text/plain', 'application/pdf'."
-    ),
-  fileName: z.string().describe("The name of the file, including its extension (e.g., 'document.pdf' or 'report.txt')."),
-  collectionName: z.nativeEnum(CollectionName).default(CollectionName.DOCUMENTS).describe("The ChromaDB collection to ingest the document into. Defaults to 'documents'.")
-});
-export type IngestDocumentInput = z.infer<typeof IngestDocumentInputSchema>;
-
-const IngestDocumentOutputSchema = z.object({
-  success: z.boolean().describe("Indicates whether the document ingestion was successful."),
-  message: z.string().optional().describe("A message describing the result of the ingestion."),
-  indexedChunkIds: z.array(z.string()).optional().describe("A list of IDs for the chunks that were successfully indexed.")
-});
-export type IngestDocumentOutput = z.infer<typeof IngestDocumentOutputSchema>;
-
-// --- Helper Functions --- //
+import { extractHierarchicalConcepts } from '@/ai/learning/concept-hierarchy';
+import { ChromaDBManager } from '@/ai/vector/chromadb-manager';
+import { CollectionName } from '@/ai/vector/chromadb-schema';
+import { logger } from '@/lib/logger';
 
 /**
- * Parses the document content from a data URI.
- * Currently supports 'text/plain'. PDF support is a placeholder as 'pdf-parse' dependency was not found.
- * @param fileDataUri The data URI of the file.
- * @param fileName The name of the file.
- * @returns The extracted text content.
- * @throws Error if unsupported MIME type or parsing fails.
+ * Métadonnées étendues pour les documents de la centrale (Innovation 32.1)
  */
-async function parseDocumentContent(fileDataUri: string, fileName: string): Promise<string> {
-  const [mimeTypePart, base64Content] = fileDataUri.split(';base64,');
-  if (!mimeTypePart || !base64Content) {
-    throw new Error('Invalid data URI format.');
-  }
+export interface CentraleDocumentMetadata {
+  id: string;
+  titre: string;
+  type: string;
+  categorie: string;
+  equipement?: string;
+  zone?: string;
+  pupitre?: string;
+  profil_cible?: string[];
+  tags: string[];
+  mots_cles: string[];
+  version: string;
+  date_creation: string;
+  date_modification: string;
+  auteur: string;
+  source_fichier: string;
+  documents_lies?: string[];
+  equipements_lies?: string[];
+  niveau_hierarchique?: number;
+  parent_id?: string;
+  enfants_ids?: string[];
+}
 
-  const mimeType = mimeTypePart.split(':')[1];
-  const buffer = Buffer.from(base64Content, 'base64');
+const IngestInputSchema = z.object({
+  fileName: z.string(),
+  fileContent: z.string().describe('Le contenu textuel brut du document.'),
+  fileType: z.string(),
+  metadata: z.any().optional(), // Ajouté pour supporter les métadonnées étendues
+});
+export type IngestInput = z.infer<typeof IngestInputSchema>;
 
-  switch (mimeType) {
-    case 'text/plain':
-      return buffer.toString('utf-8');
-    case 'application/pdf':
-      console.warn(`PDF parsing for ${fileName} is a placeholder. Real content extraction requires 'pdf-parse' or similar library.`);
-      return `This is a simulated placeholder for PDF content from file: ${fileName}. Actual content extraction is not implemented.`;
-    default:
-      throw new Error(`Unsupported MIME type for ingestion: ${mimeType}. Only 'text/plain' and 'application/pdf' are currently recognized.`);
-  }
+const IngestOutputSchema = z.object({
+  docId: z.string(),
+  chunks: z.number(),
+  embeddingModel: z.string(),
+  processedAt: z.string(),
+  concepts: z.array(z.string()),
+  graphData: z.any().optional(),
+  hierarchy: z.any().optional(),
+});
+export type IngestOutput = z.infer<typeof IngestOutputSchema>;
+
+/**
+ * Utilitaire pour limiter le temps d'exécution d'une promesse.
+ */
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  const timeoutPromise = new Promise<T>((resolve) =>
+    setTimeout(() => {
+      console.warn(`[INGEST] Timeout atteint après ${timeoutMs}ms. Utilisation du fallback.`);
+      resolve(fallback);
+    }, timeoutMs)
+  );
+  return Promise.race([promise, timeoutPromise]);
 }
 
 /**
- * Splits text into chunks of a specified size with overlap.
- * This is a basic character-based chunking strategy.
- * @param text The input text to chunk.
- * @param chunkSize The maximum size of each chunk.
- * @param chunkOverlap The number of characters to overlap between chunks.
- * @returns An array of text chunks.
+ * Extrait les concepts et entités d'un texte via LLM.
  */
-function chunkText(text: string, chunkSize: number = 1000, chunkOverlap: number = 200): string[] {
-  if (text.length <= chunkSize) {
-    return [text];
-  }
+async function extractKnowledgeFromText(docId: string, text: string) {
+  try {
+    const slice = text.substring(0, 1500); // Réduit pour la vitesse
+    const response = await ai.generate({
+      model: 'ollama/tinyllama:latest',
+      system: "Tu es un extracteur de graphe de connaissances technique. Analyse le texte et identifie les 3 relations les plus importantes.",
+      prompt: `Analyse ce document technique et extrait au maximum 3 relations clés sous le format "Sujet -> Relation -> Objet".
+      Contenu : "${slice}"`,
+    });
 
-  const chunks: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    let end = Math.min(i + chunkSize, text.length);
-    let chunk = text.substring(i, end);
-    chunks.push(chunk);
-    // Move the starting point for the next chunk, accounting for overlap
-    i += chunkSize - chunkOverlap;
-    // Ensure we don't go backwards or get stuck if overlap is too large relative to chunk size
-    if (i < 0) i = 0;
-    if (i >= text.length && end === text.length) {
-      break; // All text has been processed
+    const lines = response.text.split('\n').filter(l => l.includes('->'));
+    const nodes: any[] = [{ id: docId, label: 'Document Principal', type: 'document' }];
+    const relations: any[] = [];
+
+    lines.forEach(line => {
+      const parts = line.split('->').map(p => p.trim());
+      if (parts.length === 3) {
+        const [subject, predicate, object] = parts;
+        const subId = subject.toLowerCase().replace(/\s+/g, '_');
+        const objId = object.toLowerCase().replace(/\s+/g, '_');
+
+        nodes.push({ id: subId, label: subject, type: 'concept' });
+        nodes.push({ id: objId, label: object, type: 'entity' });
+        relations.push({ from: docId, to: subId, predicate: 'décrit' });
+        relations.push({ from: subId, to: objId, predicate: predicate });
+      }
+    });
+
+    if (nodes.length === 1) {
+      nodes.push({ id: 'technical_base', label: 'Connaissances Techniques', type: 'concept' });
+      relations.push({ from: docId, to: 'technical_base', predicate: 'concerne' });
     }
+    return { nodes, relations };
+  } catch (e) {
+    return { 
+      nodes: [{ id: docId, label: 'Document', type: 'document' }], 
+      relations: [] 
+    };
+  }
+}
+
+function chunkText(text: string, size: number): string[] {
+  const chunks = [];
+  if (!text) return [];
+  for (let i = 0; i < text.length; i += size) {
+    chunks.push(text.substring(i, i + size));
   }
   return chunks;
 }
 
-// --- Genkit Flow Definition --- //
-
-const ingestDocumentFlow = ai.defineFlow(
-  {
-    name: 'ingestDocumentFlow',
-    inputSchema: IngestDocumentInputSchema,
-    outputSchema: IngestDocumentOutputSchema,
-  },
-  async (input) => {
-    try {
-      console.log(`Starting document ingestion for file: ${input.fileName} into collection: ${input.collectionName}`);
-
-      const extractedText = await parseDocumentContent(input.fileDataUri, input.fileName);
-      const textChunks = chunkText(extractedText);
-
-      // Initialize ChromaDBManager. This assumes the manager handles connection details
-      // (e.g., from environment variables like CHROMADB_URL).
-      const chromaDBManager = new ChromaDBManager();
-      const indexedChunkIds: string[] = [];
-
-      if (textChunks.length === 0) {
-        console.warn(`No content extracted or chunks generated for file: ${input.fileName}. Skipping indexing.`);
-        return {
-          success: true,
-          message: `No content to index for ${input.fileName}.`,
-          indexedChunkIds: []
-        };
-      }
-
-      // Iterate through chunks, generate embeddings, and add to ChromaDB
-      for (let i = 0; i < textChunks.length; i++) {
-        const chunk = textChunks[i];
-
-        // Generate embedding for the current chunk using a suitable embedding model
-        const embeddingResponse = await ai.embed({
-          model: 'text-embedding-004', // Using a general purpose text embedding model
-          content: [
-            { text: chunk }
-          ]
-        });
-        const embedding = embeddingResponse.embedding;
-
-        // Create standardized metadata for the chunk
-        const metadata = createStandardMetadata({
-          source: input.fileName,
-          chunkIndex: i,
-          totalChunks: textChunks.length,
-          type: input.fileName.split('.').pop() || 'unknown', // Extract file extension as type
-        });
-
-        // Generate a unique ID for each chunk (e.g., fileName-chunkIndex)
-        const docId = `${input.fileName.replace(/\s/g, '_').toLowerCase()}-${i}`;
-
-        // Add the chunk, its embedding, and metadata to the specified ChromaDB collection
-        await chromaDBManager.addDocument(input.collectionName, docId, embedding, chunk, metadata);
-        indexedChunkIds.push(docId);
-        console.log(`Indexed chunk ${i + 1}/${textChunks.length} (ID: ${docId}) for file: ${input.fileName}`);
-      }
-
-      console.log(`Successfully ingested ${indexedChunkIds.length} chunks from ${input.fileName}.`);
-      return {
-        success: true,
-        message: `Successfully ingested ${indexedChunkIds.length} chunks from ${input.fileName}.`,
-        indexedChunkIds,
-      };
-    } catch (error: any) {
-      console.error(`Failed to ingest document ${input.fileName}: ${error.message}`, error);
-      return {
-        success: false,
-        message: `Failed to ingest document '${input.fileName}': ${error.message}`,
-      };
-    }
-  }
-);
-
-// --- Exported Wrapper Function --- //
-
-export async function ingestDocument(input: IngestDocumentInput): Promise<IngestDocumentOutput> {
+export async function ingestDocument(input: IngestInput): Promise<IngestOutput> {
   return ingestDocumentFlow(input);
 }
+
+/**
+ * Extension du pipeline d'ingestion pour ChromaDB
+ */
+export class EnhancedIngestPipeline {
+  private chromaManager: ChromaDBManager;
+  
+  constructor() {
+    this.chromaManager = ChromaDBManager.getInstance();
+  }
+  
+  async processDocument(
+    document: {
+      content: string;
+      metadata: Partial<CentraleDocumentMetadata>;
+      chunks?: Array<{ content: string; metadata: any }>;
+    }
+  ): Promise<void> {
+    try {
+      const targetCollection = this.determineCollection(document.metadata);
+      
+      if (document.chunks && document.chunks.length > 0) {
+        await this.indexChunks(targetCollection, document.chunks, document.metadata);
+      } else {
+        await this.indexSingleDocument(targetCollection, document);
+      }
+      
+      logger.info(`Document processed successfully in ChromaDB: ${document.metadata.titre}`);
+    } catch (error) {
+      logger.error('ChromaDB processing failed:', error);
+      throw error;
+    }
+  }
+  
+  private determineCollection(metadata: Partial<CentraleDocumentMetadata>): CollectionName {
+    const type = metadata.type;
+    const categorie = metadata.categorie;
+    
+    if (type === 'procedure' || categorie === 'procedure') return 'PROCEDURES_EXPLOITATION';
+    if (type === 'alarme' || type === 'consigne') return 'CONSIGNES_ET_SEUILS';
+    if (type === 'hmi' || type === 'ecran' || type === 'pupitre') return 'SALLE_CONTROLE_CONDUITE';
+    if (type === 'equipe' || type === 'planning' || type === 'passation') return 'GESTION_EQUIPES_HUMAIN';
+    
+    return 'EQUIPEMENTS_PRINCIPAUX';
+  }
+  
+  private async indexChunks(
+    collectionName: CollectionName,
+    chunks: Array<{ content: string; metadata: any }>,
+    baseMetadata: Partial<CentraleDocumentMetadata>
+  ): Promise<void> {
+    const documents = chunks.map((chunk, index) => ({
+      id: `${baseMetadata.id}_chunk_${index}`,
+      content: chunk.content,
+      metadata: {
+        ...baseMetadata,
+        ...chunk.metadata,
+        chunk_index: index,
+        chunk_total: chunks.length,
+        is_chunk: true
+      }
+    }));
+    await this.chromaManager.addDocuments(collectionName, documents);
+  }
+  
+  private async indexSingleDocument(
+    collectionName: CollectionName,
+    document: { content: string; metadata: Partial<CentraleDocumentMetadata> }
+  ): Promise<void> {
+    await this.chromaManager.addDocuments(collectionName, [{
+      id: document.metadata.id!,
+      content: document.content,
+      metadata: document.metadata as Record<string, any>
+    }]);
+  }
+}
+
+const pipeline = new EnhancedIngestPipeline();
+
+export const ingestDocumentFlow = ai.defineFlow(
+  {
+    name: 'ingestDocumentFlow',
+    inputSchema: IngestInputSchema,
+    outputSchema: IngestOutputSchema,
+  },
+  async (input) => {
+    console.log(`[FLOW][INGEST][1/4] Début du traitement : ${input.fileName}`);
+    
+    const chunks = chunkText(input.fileContent, 1000);
+    const docId = Math.random().toString(36).substring(7);
+
+    console.log(`[FLOW][INGEST][2/4] Segmentation : ${chunks.length} segments.`);
+    
+    const results = await Promise.allSettled([
+      withTimeout(extractKnowledgeFromText(docId, input.fileContent), 15000, { nodes: [], relations: [] }),
+      withTimeout(extractHierarchicalConcepts(input.fileContent.substring(0, 1000)), 12000, { nodes: [], relations: [] }),
+    ]);
+
+    const knowledge = results[0].status === 'fulfilled' ? results[0].value : { nodes: [], relations: [] };
+    const hierarchy = results[1].status === 'fulfilled' ? results[1].value : null;
+
+    console.log(`[FLOW][INGEST][3/4] Persistence dans ChromaDB...`);
+    
+    // Appel du pipeline amélioré
+    await pipeline.processDocument({
+      content: input.fileContent,
+      metadata: {
+        id: docId,
+        titre: input.fileName,
+        type: input.fileType,
+        ...input.metadata
+      },
+      chunks: chunks.map(c => ({ content: c, metadata: {} }))
+    });
+
+    console.log(`[FLOW][INGEST][4/4] Ingestion terminée.`);
+
+    return {
+      docId,
+      chunks: chunks.length,
+      embeddingModel: 'ollama/nomic-embed-text',
+      processedAt: new Date().toISOString(),
+      concepts: (knowledge as any).nodes?.map((n: any) => n.label) || [],
+      graphData: knowledge,
+      hierarchy
+    };
+  }
+);

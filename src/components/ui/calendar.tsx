@@ -1,4 +1,5 @@
 "use client"
+import { ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 
 import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
@@ -54,12 +55,10 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        IconLeft: ({ className, ...props }) => (
-          <ChevronLeft className={cn("h-4 w-4", className)} {...props} />
-        ),
-        IconRight: ({ className, ...props }) => (
-          <ChevronRight className={cn("h-4 w-4", className)} {...props} />
-        ),
+        Chevron: ({ orientation, ...props }) => {
+          const Icon = orientation === 'left' ? ChevronLeftIcon : ChevronRightIcon;
+          return <Icon className="h-4 w-4" {...props} />;
+        },
       }}
       {...props}
     />
