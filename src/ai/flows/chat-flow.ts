@@ -1,25 +1,23 @@
 'use server';
 
 /**
- * @fileOverview A Genkit flow for a RAG-powered conversational agent.
- *
- * - chatFlow - A function that handles natural language questions and provides
- *              contextualized answers from indexed documents.
- * - ChatFlowInput - The input type for the chatFlow function.
- * - ChatFlowOutput - The return type for the chatFlow function.
+ * @fileOverview Elite 32 Conversational Agent Flow (HybridRAG).
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
+import { retrieveRelevantKnowledge } from '@/ai/rag/intelligent-retriever';
+import { assembleContext } from '@/ai/rag/context-assembler';
+import { storeInteraction } from '@/ai/learning/episodic-memory';
 
 const ChatFlowInputSchema = z.object({
   query: z.string().describe('The natural language question from the user.'),
-  retrievedContext: z.string().optional().describe('Relevant context retrieved from indexed documents, used to answer the query.'),
 });
 export type ChatFlowInput = z.infer<typeof ChatFlowInputSchema>;
 
 const ChatFlowOutputSchema = z.object({
   response: z.string().describe('The contextualized answer to the user\'s query.'),
+  confidence: z.number().optional().describe('AI confidence score.'),
 });
 export type ChatFlowOutput = z.infer<typeof ChatFlowOutputSchema>;
 
@@ -29,18 +27,24 @@ export async function chatFlow(input: ChatFlowInput): Promise<ChatFlowOutput> {
 
 const ragChatPrompt = ai.definePrompt({
   name: 'ragChatPrompt',
-  input: {schema: ChatFlowInputSchema},
-  output: {schema: ChatFlowOutputSchema},
-  prompt: `You are a helpful and knowledgeable assistant.
-Your task is to answer the user's question based ONLY on the provided context.
-If the answer cannot be found in the context, state that you cannot provide an answer based on the given information.
+  input: { 
+    schema: z.object({ 
+      query: z.string(), 
+      context: z.string() 
+    }) 
+  },
+  output: { schema: ChatFlowOutputSchema },
+  prompt: `You are the AGENTIC Elite 32 Assistant.
+Your task is to answer the user's question using the provided Multi-Strate context.
+Follow the elite reasoning loop:
+1. Analyze technical documentation (cold knowledge).
+2. Check episodic memory for past successful patterns.
+3. Validate relations via knowledge graph.
+
+If the context is insufficient, state it clearly. Always provide cited generations.
 
 Context:
-{{#if retrievedContext}}
-{{{retrievedContext}}}
-{{else}}
-No specific documents were retrieved for this query.
-{{/if}}
+{{{context}}}
 
 Question:
 {{{query}}}
@@ -55,22 +59,25 @@ const ragChatFlow = ai.defineFlow(
     outputSchema: ChatFlowOutputSchema,
   },
   async (input) => {
-    // In a full RAG implementation, a retrieval step would occur here,
-    // fetching relevant documents based on input.query.
-    // For example:
-    // import { retrieveRelevantDocuments } from '@/ai/rag/intelligent-retriever';
-    // const documents = await retrieveRelevantDocuments(input.query);
-    // const contextString = documents.map(doc => doc.content).join('\n\n');
-    // However, as per assignment, we use the 'retrievedContext' provided in the input
-    // or a default if not present.
+    // 1. PHASE DE RÉCUPÉRATION (HybridRAG)
+    const knowledge = await retrieveRelevantKnowledge(input.query);
+    
+    // 2. ASSEMBLAGE CONTEXTUEL
+    const context = assembleContext(knowledge);
 
-    const contextForPrompt = input.retrievedContext || "No specific documents were retrieved for this query.";
-
-    const {output} = await ragChatPrompt({
+    // 3. PHASE DE RAISONNEMENT (Metacognitive Generation)
+    const { output } = await ragChatPrompt({
       query: input.query,
-      retrievedContext: contextForPrompt,
+      context: context,
     });
 
-    return output!;
+    const finalResponse = output!;
+
+    // 4. PHASE D'APPRENTISSAGE (Continuous Learning) - Async fire and forget
+    storeInteraction(input.query, finalResponse.response).catch(err => 
+      console.error("[Elite 32] Failed to store episodic memory:", err)
+    );
+
+    return finalResponse;
   }
 );
