@@ -1,8 +1,10 @@
+/**
+ * @fileOverview FileTree - Explorateur hiérarchique avec distinction dossiers/fichiers.
+ */
 
 'use client';
 
-import { useState } from 'react';
-import { ChevronRight, ChevronDown, FileText, Folder, Trash2, Loader2, Target } from 'lucide-react';
+import { ChevronRight, ChevronDown, FileText, Folder, Trash2, Loader2, Target, FileJson, FileCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface FileNode {
@@ -36,6 +38,13 @@ export function FileTree({
   level = 0 
 }: FileTreeProps) {
   
+  const getFileIcon = (fileName: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (ext === 'json') return <FileJson className="w-4 h-4 text-yellow-500/60 shrink-0" />;
+    if (ext === 'md' || ext === 'txt') return <FileText className="w-4 h-4 text-blue-400/60 shrink-0" />;
+    return <FileCode className="w-4 h-4 text-purple-400/60 shrink-0" />;
+  };
+
   const getSyncIcon = (status: FileNode['syncStatus']) => {
     switch (status) {
       case 'pending': return <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" />;
@@ -51,6 +60,7 @@ export function FileTree({
       {nodes.map((node) => {
         const isSelected = selectedPath === node.path;
         const isDirectory = node.type === 'directory';
+        const isExpanded = expandedNodes.has(node.path);
 
         return (
           <div key={node.path} className="group">
@@ -73,29 +83,28 @@ export function FileTree({
                 }}
               >
                 {isDirectory && (
-                  expandedNodes.has(node.path) ? <ChevronDown className="w-3 h-3 text-gray-500" /> : <ChevronRight className="w-3 h-3 text-gray-500" />
+                  isExpanded ? <ChevronDown className="w-3 h-3 text-gray-500" /> : <ChevronRight className="w-3 h-3 text-gray-500" />
                 )}
               </div>
               
               {isDirectory ? (
                 <Folder className={cn(
                   "w-4 h-4 shrink-0", 
-                  isSelected ? "text-blue-400" : (expandedNodes.has(node.path) ? "text-blue-400/60" : "text-gray-600")
+                  isSelected ? "text-blue-400" : (isExpanded ? "text-blue-400/60" : "text-gray-600")
                 )} />
               ) : (
-                <FileText className="w-4 h-4 text-purple-400/50 shrink-0" />
+                getFileIcon(node.name)
               )}
               
               <span className={cn(
                 "flex-1 truncate text-[13px] tracking-tight",
-                isDirectory ? "font-bold" : "font-medium"
+                isDirectory ? "font-bold" : "font-medium text-gray-300"
               )}>
                 {node.name}
               </span>
               
               <div className="flex items-center gap-3 opacity-0 group-hover/item:opacity-100 transition-all">
-                {isSelected && isDirectory && <Target className="w-3 h-3 text-blue-400 animate-pulse" />}
-                {getSyncIcon(node.syncStatus)}
+                {!isDirectory && getSyncIcon(node.syncStatus)}
                 
                 <button
                   onClick={(e) => {
@@ -110,7 +119,7 @@ export function FileTree({
               </div>
             </div>
             
-            {isDirectory && expandedNodes.has(node.path) && node.children && (
+            {isDirectory && isExpanded && node.children && (
               <div className="border-l border-white/5 ml-5 mt-0.5 mb-1 animate-in slide-in-from-top-1 duration-200">
                 <FileTree
                   nodes={node.children}

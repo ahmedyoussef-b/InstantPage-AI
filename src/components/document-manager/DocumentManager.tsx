@@ -1,3 +1,6 @@
+/**
+ * @fileOverview DocumentManager - Orchestrateur central de la gestion documentaire.
+ */
 
 'use client';
 
@@ -6,7 +9,7 @@ import { FileTree, type FileNode } from './FileTree';
 import { UploadZone } from './UploadZone';
 import { SyncStatus, type SyncEvent } from './SyncStatus';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { Database, Search, RefreshCw, Layers, FolderPlus } from 'lucide-react';
+import { Database, Search, RefreshCw, FolderPlus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -18,14 +21,13 @@ export default function DocumentManager() {
   const [syncEvents, setSyncEvents] = useState<SyncEvent[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // NOUVEAU: État pour le dossier sélectionné
   const [selectedNode, setSelectedNode] = useState<FileNode | null>(null);
   
   const { isConnected, lastEvent } = useWebSocket();
   const { toast } = useToast();
 
-  const loadTree = useCallback(async () => {
+  const loadTree = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const response = await fetch('/api/documents/tree');
       const data = await response.json();
@@ -33,10 +35,11 @@ export default function DocumentManager() {
     } catch (error) {
       console.error('[UI][DOCS] Error loading tree:', error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
+  // Écouter les changements en temps réel
   useEffect(() => {
     if (lastEvent) {
       setSyncEvents(prev => [{
@@ -47,8 +50,9 @@ export default function DocumentManager() {
         success: lastEvent.success
       }, ...prev].slice(0, 50));
 
-      if (lastEvent.type === 'file-changed' || lastEvent.type === 'sync-complete' || lastEvent.type === 'CONNECTED') {
-        loadTree();
+      // Rafraîchir l'arborescence si un fichier a été ajouté ou supprimé
+      if (lastEvent.type === 'file-changed' || lastEvent.type === 'CONNECTED') {
+        loadTree(true);
       }
     }
   }, [lastEvent, loadTree]);
@@ -57,15 +61,10 @@ export default function DocumentManager() {
     loadTree();
   }, [loadTree]);
 
-  // Utilitaire pour obtenir le chemin relatif par rapport à DOCUMENTS_ROOT
-  const getRelativePath = (fullPath: string) => {
-    // Dans un environnement réel, on nettoierait le chemin. Ici on suppose que le path commence après data/centrale_documents
-    const parts = fullPath.split(/[\\/]centrale_documents[\\/]/);
-    return parts.length > 1 ? parts[1] : '';
-  };
-
   const handleFileUpload = async (files: File[], targetPath: string) => {
-    const relativePath = getRelativePath(targetPath);
+    // Calculer le chemin relatif pour l'API
+    const parts = targetPath.split(/[\\/]centrale_documents[\\/]/);
+    const relativePath = parts.length > 1 ? parts[1] : '';
     
     for (const file of files) {
       const formData = new FormData();
@@ -82,8 +81,11 @@ export default function DocumentManager() {
         
         toast({
           title: "Document transféré",
-          description: `${file.name} assigné à ${selectedNode?.name || 'la destination'}.`,
+          description: `${file.name} est en cours d'indexation.`,
         });
+
+        // Forcer un rafraîchissement local immédiat
+        loadTree(true);
       } catch (error) {
         toast({
           variant: "destructive",
@@ -95,7 +97,7 @@ export default function DocumentManager() {
   };
 
   const handleDelete = async (node: FileNode) => {
-    if (!confirm(`Voulez-vous purger définitivement ${node.name} de la base vectorielle ?`)) return;
+    if (!confirm(`Voulez-vous purger définitivement ${node.name} ?`)) return;
     
     try {
       const response = await fetch('/api/documents/delete', {
@@ -111,24 +113,24 @@ export default function DocumentManager() {
       if (!response.ok) throw new Error('Delete failed');
       
       toast({
-        title: "Document purgé",
-        description: "Le fichier et ses vecteurs ont été supprimés.",
+        title: "Élément purgé",
+        description: "La suppression physique et vectorielle a été effectuée.",
       });
       
       if (selectedNode?.path === node.path) setSelectedNode(null);
-      loadTree();
+      loadTree(true);
     } catch (error) {
       toast({
         variant: "destructive",
         title: "Erreur Purge",
-        description: "Impossible de supprimer le document.",
+        description: "Impossible de supprimer l'élément.",
       });
     }
   };
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-12rem)] bg-[#171717] rounded-[2rem] border border-white/5 overflow-hidden shadow-2xl">
-      {/* Sidebar - Arborescence */}
+      {/* Sidebar - Arborescence complète (Dossiers + Fichiers) */}
       <div className="lg:w-96 border-r border-white/5 bg-black/20 flex flex-col min-h-0">
         <div className="p-6 border-b border-white/5 space-y-4">
           <div className="flex items-center justify-between">
@@ -138,7 +140,7 @@ export default function DocumentManager() {
               </div>
               <div>
                 <h2 className="text-sm font-black uppercase tracking-widest text-white leading-none mb-1">Architecture</h2>
-                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Base de Connaissances</p>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Documents & Vecteurs</p>
               </div>
             </div>
           </div>
@@ -146,7 +148,7 @@ export default function DocumentManager() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
             <Input 
-              placeholder="Rechercher un dossier..." 
+              placeholder="Chercher dans l'arborescence..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-black/40 border-white/5 rounded-xl pl-9 text-xs h-9 focus-visible:ring-blue-500"
@@ -158,7 +160,7 @@ export default function DocumentManager() {
           {loading ? (
             <div className="flex flex-col items-center justify-center h-40 text-gray-600 gap-4">
               <RefreshCw className="w-6 h-6 animate-spin text-blue-500/50" />
-              <p className="text-[10px] font-black uppercase tracking-widest">Exploration...</p>
+              <p className="text-[10px] font-black uppercase tracking-widest">Synchronisation...</p>
             </div>
           ) : (
             <FileTree 
@@ -174,10 +176,8 @@ export default function DocumentManager() {
                 });
               }}
               onSelect={(node) => {
-                if (node.type === 'directory') {
-                  setSelectedNode(node);
-                  console.log(`[UI][DOCS] Destination sélectionnée : ${node.name}`);
-                }
+                setSelectedNode(node);
+                console.log(`[UI][DOCS] Sélection : ${node.name} (${node.type})`);
               }}
               onDelete={handleDelete}
             />
@@ -185,7 +185,7 @@ export default function DocumentManager() {
         </div>
       </div>
       
-      {/* Main content */}
+      {/* Zone de travail - Upload et Insights */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
         <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
           <div className="max-w-4xl mx-auto space-y-8 pb-10">
@@ -194,22 +194,21 @@ export default function DocumentManager() {
                 <div className="p-2 bg-purple-600/20 rounded-xl">
                   <FolderPlus className="w-4 h-4 text-purple-400" />
                 </div>
-                <h3 className="text-xs font-black uppercase text-white tracking-[0.2em]">Assignation de documents</h3>
+                <h3 className="text-xs font-black uppercase text-white tracking-[0.2em]">Approvisionnement Documentaire</h3>
               </div>
               <div className={cn(
                 "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2",
                 isConnected ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
               )}>
                 <div className={cn("w-1.5 h-1.5 rounded-full", isConnected ? "bg-green-500" : "bg-red-500 animate-pulse")} />
-                {isConnected ? 'Sync Active' : 'Polling'}
+                {isConnected ? 'Canal Synchronisé' : 'Reconnexion...'}
               </div>
             </div>
 
-            {/* Zone d'Upload avec contexte de destination */}
             <UploadZone 
               onUpload={handleFileUpload}
-              currentPath={selectedNode?.path || ''}
-              currentDirName={selectedNode?.name || ''}
+              currentPath={selectedNode?.type === 'directory' ? selectedNode.path : (selectedNode?.path ? selectedNode.path.split(/[\\/]/).slice(0, -1).join('/') : '')}
+              currentDirName={selectedNode?.type === 'directory' ? selectedNode.name : "Dossier parent"}
             />
             
             <div className="px-6">
@@ -220,20 +219,25 @@ export default function DocumentManager() {
                       <div className="w-16 h-16 bg-blue-600/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
                         <Database className="w-8 h-8 text-blue-500 opacity-40" />
                       </div>
-                      <p className="text-sm font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Guide d'approvisionnement</p>
+                      <p className="text-sm font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Sélection requise</p>
                       <p className="text-xs text-gray-500 font-medium max-w-sm mx-auto leading-relaxed">
-                        Pour classer vos documents, sélectionnez d'abord un dossier dans l'architecture à gauche, puis glissez vos fichiers dans la zone d'upload.
+                        Sélectionnez un dossier dans l'architecture pour y assigner de nouveaux documents techniques. Vos fichiers apparaîtront instantanément dans l'arbre après l'upload.
                       </p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="w-16 h-16 bg-purple-600/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                        <RefreshCw className="w-8 h-8 text-purple-500 opacity-40" />
+                      <div className="flex items-center justify-center gap-4 mb-6">
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Type</p>
+                          <p className="text-xs font-bold text-white uppercase">{selectedNode.type}</p>
+                        </div>
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Taille</p>
+                          <p className="text-xs font-bold text-white">{selectedNode.size ? `${(selectedNode.size / 1024).toFixed(1)} KB` : '--'}</p>
+                        </div>
                       </div>
-                      <p className="text-sm font-black text-purple-400 uppercase tracking-[0.2em] mb-2">Dossier Actif : {selectedNode.name}</p>
-                      <p className="text-xs text-gray-500 font-medium italic">
-                        Les documents ajoutés seront automatiquement indexés dans la collection correspondante.
-                      </p>
+                      <p className="text-sm font-black text-white uppercase tracking-tight">{selectedNode.name}</p>
+                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Dernière modification : {selectedNode.modifiedAt ? new Date(selectedNode.modifiedAt).toLocaleDateString() : 'Inconnue'}</p>
                     </div>
                   )}
                 </CardContent>
@@ -242,7 +246,6 @@ export default function DocumentManager() {
           </div>
         </div>
         
-        {/* Sync status footer */}
         <SyncStatus events={syncEvents} isConnected={isConnected} />
       </div>
     </div>

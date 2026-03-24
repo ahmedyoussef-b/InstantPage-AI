@@ -16,7 +16,6 @@ export class FileSystemService extends EventEmitter {
 
   constructor() {
     super();
-    // L'initialisation est lancée mais ne bloque pas le constructeur
     this.init();
   }
 
@@ -66,13 +65,13 @@ export class FileSystemService extends EventEmitter {
   }
 
   private setupWatcher(): void {
-    if (typeof window !== 'undefined') return; // Uniquement côté serveur
+    if (typeof window !== 'undefined') return;
 
     this.watcher = chokidar.watch(DOCUMENTS_ROOT, {
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: {
-        stabilityThreshold: 2000,
+        stabilityThreshold: 1000,
         pollInterval: 100
       }
     });
@@ -109,7 +108,7 @@ export class FileSystemService extends EventEmitter {
       }
       
       this.isProcessing = false;
-    }, 3000);
+    }, 2000);
   }
 
   private async handleFileChange(filePath: string): Promise<void> {
@@ -120,14 +119,11 @@ export class FileSystemService extends EventEmitter {
     const appUrl = process.env.APP_URL || 'http://localhost:3000';
     
     try {
+      const content = await fs.readFile(filePath, 'utf-8');
       await fetch(`${appUrl}/api/documents/vectorize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          filePath, 
-          collection,
-          content: await fs.readFile(filePath, 'utf-8')
-        })
+        body: JSON.stringify({ filePath, collection, content })
       });
     } catch (e) {
       console.error(`[SYNC] Erreur API vectorisation:`, e);
@@ -177,15 +173,17 @@ export class FileSystemService extends EventEmitter {
 
   private async buildNode(dirPath: string, name: string): Promise<FileNode> {
     const stats = await fs.stat(dirPath);
+    const isDirectory = stats.isDirectory();
+    
     const node: FileNode = {
       name,
       path: dirPath,
-      type: stats.isDirectory() ? 'directory' : 'file',
+      type: isDirectory ? 'directory' : 'file',
       modifiedAt: stats.mtime,
       size: stats.size
     };
     
-    if (stats.isDirectory()) {
+    if (isDirectory) {
       const children = await fs.readdir(dirPath);
       node.children = await Promise.all(
         children.map(async (child) => {
@@ -200,15 +198,13 @@ export class FileSystemService extends EventEmitter {
         return a.name.localeCompare(b.name);
       });
     } else {
-      // Pour les fichiers, vérifier le statut de synchro via une méthode légère
-      node.syncStatus = 'synced'; // Simplifié pour le prototype
+      node.syncStatus = 'synced'; // Statut par défaut pour les fichiers existants
     }
     
     return node;
   }
 }
 
-// Singleton pour éviter les instances multiples
 let instance: FileSystemService | null = null;
 
 export const fileService = (() => {
