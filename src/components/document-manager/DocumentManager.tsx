@@ -39,7 +39,6 @@ export default function DocumentManager() {
     }
   }, []);
 
-  // Écouter les changements en temps réel
   useEffect(() => {
     if (lastEvent) {
       setSyncEvents(prev => [{
@@ -50,7 +49,6 @@ export default function DocumentManager() {
         success: lastEvent.success
       }, ...prev].slice(0, 50));
 
-      // Rafraîchir l'arborescence si un fichier a été ajouté ou supprimé
       if (lastEvent.type === 'file-changed' || lastEvent.type === 'CONNECTED') {
         loadTree(true);
       }
@@ -62,7 +60,6 @@ export default function DocumentManager() {
   }, [loadTree]);
 
   const handleFileUpload = async (files: File[], targetPath: string) => {
-    // Calculer le chemin relatif pour l'API
     const parts = targetPath.split(/[\\/]centrale_documents[\\/]/);
     const relativePath = parts.length > 1 ? parts[1] : '';
     
@@ -83,8 +80,6 @@ export default function DocumentManager() {
           title: "Document transféré",
           description: `${file.name} est en cours d'indexation.`,
         });
-
-        // Forcer un rafraîchissement local immédiat
         loadTree(true);
       } catch (error) {
         toast({
@@ -93,6 +88,43 @@ export default function DocumentManager() {
           description: `Impossible de transférer ${file.name}.`,
         });
       }
+    }
+  };
+
+  const handleRename = async (path: string, newName: string) => {
+    try {
+      const response = await fetch('/api/documents/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, newName })
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Rename failed');
+      }
+      
+      toast({ title: "Élément renommé", description: `Nouveau nom: ${newName}` });
+      loadTree(true);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erreur Renommage", description: error.message });
+    }
+  };
+
+  const handleCreateFolder = async (parentPath: string, name: string) => {
+    try {
+      const response = await fetch('/api/documents/mkdir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentPath, name })
+      });
+      
+      if (!response.ok) throw new Error('Mkdir failed');
+      
+      toast({ title: "Dossier créé", description: name });
+      loadTree(true);
+    } catch (error) {
+      toast({ variant: "destructive", title: "Erreur Création", description: "Impossible de créer le dossier." });
     }
   };
 
@@ -112,25 +144,16 @@ export default function DocumentManager() {
       
       if (!response.ok) throw new Error('Delete failed');
       
-      toast({
-        title: "Élément purgé",
-        description: "La suppression physique et vectorielle a été effectuée.",
-      });
-      
+      toast({ title: "Élément purgé", description: "Suppression effectuée." });
       if (selectedNode?.path === node.path) setSelectedNode(null);
       loadTree(true);
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Erreur Purge",
-        description: "Impossible de supprimer l'élément.",
-      });
+      toast({ variant: "destructive", title: "Erreur Purge", description: "Impossible de supprimer l'élément." });
     }
   };
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-12rem)] bg-[#171717] rounded-[2rem] border border-white/5 overflow-hidden shadow-2xl">
-      {/* Sidebar - Arborescence complète (Dossiers + Fichiers) */}
       <div className="lg:w-96 border-r border-white/5 bg-black/20 flex flex-col min-h-0">
         <div className="p-6 border-b border-white/5 space-y-4">
           <div className="flex items-center justify-between">
@@ -175,17 +198,15 @@ export default function DocumentManager() {
                   return next;
                 });
               }}
-              onSelect={(node) => {
-                setSelectedNode(node);
-                console.log(`[UI][DOCS] Sélection : ${node.name} (${node.type})`);
-              }}
+              onSelect={(node) => setSelectedNode(node)}
               onDelete={handleDelete}
+              onRename={handleRename}
+              onCreateFolder={handleCreateFolder}
             />
           )}
         </div>
       </div>
       
-      {/* Zone de travail - Upload et Insights */}
       <div className="flex-1 flex flex-col min-h-0 min-w-0">
         <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
           <div className="max-w-4xl mx-auto space-y-8 pb-10">
@@ -221,7 +242,7 @@ export default function DocumentManager() {
                       </div>
                       <p className="text-sm font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Sélection requise</p>
                       <p className="text-xs text-gray-500 font-medium max-w-sm mx-auto leading-relaxed">
-                        Sélectionnez un dossier dans l'architecture pour y assigner de nouveaux documents techniques. Vos fichiers apparaîtront instantanément dans l'arbre après l'upload.
+                        Sélectionnez un dossier dans l'architecture pour y assigner de nouveaux documents techniques.
                       </p>
                     </div>
                   ) : (

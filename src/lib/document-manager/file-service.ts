@@ -1,6 +1,6 @@
 /**
  * @fileOverview Service de gestion de fichiers avancé - Elite 32.
- * Gère la surveillance temps réel (Watcher), l'arborescence et la synchronisation avec ChromaDB.
+ * Gère la surveillance temps réel, l'arborescence, le renommage et la création.
  */
 
 import fs from 'fs/promises';
@@ -36,31 +36,7 @@ export class FileSystemService extends EventEmitter {
         await fs.access(folderPath);
       } catch {
         await fs.mkdir(folderPath, { recursive: true });
-        await this.createDefaultSubdirectories(folder);
       }
-    }
-  }
-
-  private async createDefaultSubdirectories(folder: string): Promise<void> {
-    const defaultStructure: Record<string, string[]> = {
-      '01_DOCUMENTS_GENERAUX': ['01_PRESENTATION_GENERALE', '02_PLAN_SITE_ET_ACCES', '03_LISTES_EQUIPEMENTS', '04_CONTACTS_ET_ORGANIGRAMME'],
-      '02_EQUIPEMENTS_PRINCIPAUX': ['TG1_TURBINE_A_GAZ_01', 'TG2_TURBINE_A_GAZ_02', 'TV_TURBINE_A_VAPEUR'],
-      '03_SYSTEMES_AUXILIAIRES': ['01_SYSTEME_GAZ', '02_SYSTEME_HUILE_LUBRIFICATION', '03_SYSTEME_EAU'],
-      '04_PROCEDURES': ['01_PROCEDURES_DEMARRAGE_ARRET', '02_PROCEDURES_INTERVENTION_TERRAIN', '03_PROCEDURES_GESTION_ALARMES'],
-      '05_CONSIGNES_ET_SEUILS': ['01_VALEURS_NOMINALES', '02_SEUILS_ALARMES_ET_COUPURES'],
-      '06_MAINTENANCE': ['01_PLAN_MAINTENANCE', '02_GAMMES_MAINTENANCE', '03_HISTORIQUE_INTERVENTIONS'],
-      '07_HISTORIQUE': ['01_ARCHIVES_PARAMETRES', '02_ARCHIVES_RAPPORTS'],
-      '08_SECURITE': ['01_DOCUMENTS_REGLEMENTAIRES', '02_ANALYSE_RISQUES'],
-      '09_ANALYSE_PERFORMANCE': ['01_INDICATEURS_CLEFS', '02_RAPPORTS_PERFORMANCE'],
-      '10_FORMATION': ['01_MODULES_FORMATION', '02_SUPPORTS_PEDAGOGIQUES'],
-      '11_SALLE_CONTROLE_ET_CONDUITE': ['01_ORGANISATION_CONDUITE', '02_PUPITRES_ET_HMI'],
-      '12_GESTION_EQUIPES_ET_HUMAIN': ['01_ORGANISATION_EQUIPES', '02_PLANNING_ET_HORAIRES'],
-      '13_SUPERVISION_GLOBALE': ['01_TABLEAU_BORD_CHEF_QUART', '02_SUIVI_PERFORMANCE_HUMAINE']
-    };
-
-    const subdirs = defaultStructure[folder] || [];
-    for (const subdir of subdirs) {
-      await fs.mkdir(path.join(DOCUMENTS_ROOT, folder, subdir), { recursive: true });
     }
   }
 
@@ -112,21 +88,21 @@ export class FileSystemService extends EventEmitter {
   }
 
   private async handleFileChange(filePath: string): Promise<void> {
-    const stats = await fs.stat(filePath);
-    if (stats.isDirectory()) return;
-
-    const collection = this.getCollectionFromPath(filePath);
-    const appUrl = process.env.APP_URL || 'http://localhost:3000';
-    
     try {
+      const stats = await fs.stat(filePath);
+      if (stats.isDirectory()) return;
+
+      const collection = this.getCollectionFromPath(filePath);
+      const appUrl = process.env.APP_URL || 'http://localhost:3000';
       const content = await fs.readFile(filePath, 'utf-8');
+      
       await fetch(`${appUrl}/api/documents/vectorize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath, collection, content })
       });
     } catch (e) {
-      console.error(`[SYNC] Erreur API vectorisation:`, e);
+      // Le fichier a peut-être été supprimé entre-temps
     }
   }
 
@@ -157,6 +133,32 @@ export class FileSystemService extends EventEmitter {
     return relative.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
   }
 
+  /**
+   * Renomme un fichier ou un dossier
+   */
+  async renameItem(oldPath: string, newName: string): Promise<string> {
+    const dir = path.dirname(oldPath);
+    const newPath = path.join(dir, newName);
+    
+    // Protection : Ne pas renommer les dossiers racines
+    const relative = path.relative(DOCUMENTS_ROOT, oldPath);
+    if (!relative.includes(path.sep) && FOLDER_NAMES.includes(relative)) {
+      throw new Error("Les dossiers racines des collections ne peuvent pas être renommés.");
+    }
+
+    await fs.rename(oldPath, newPath);
+    return newPath;
+  }
+
+  /**
+   * Crée un nouveau dossier
+   */
+  async createDirectory(parentPath: string, name: string): Promise<string> {
+    const newPath = path.join(parentPath, name);
+    await fs.mkdir(newPath, { recursive: true });
+    return newPath;
+  }
+
   async getTree(): Promise<FileNode[]> {
     const tree: FileNode[] = [];
     for (const folder of FOLDER_NAMES) {
@@ -165,7 +167,7 @@ export class FileSystemService extends EventEmitter {
         const node = await this.buildNode(folderPath, folder);
         tree.push(node);
       } catch (e) {
-        console.error(`[FILE-SYSTEM] Dossier ${folder} inaccessible`);
+        // Silently skip missing folders
       }
     }
     return tree;
@@ -192,13 +194,10 @@ export class FileSystemService extends EventEmitter {
         })
       );
       
-      // Trier : dossiers d'abord, puis fichiers
       node.children.sort((a, b) => {
         if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
-    } else {
-      node.syncStatus = 'synced'; // Statut par défaut pour les fichiers existants
     }
     
     return node;
