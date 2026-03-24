@@ -28,25 +28,17 @@ export const COLLECTION_MAPPING: Record<string, string> = {
 export const COLLECTION_NAMES = Object.values(COLLECTION_MAPPING);
 export const FOLDER_NAMES = Object.keys(COLLECTION_MAPPING);
 
-// Configuration additionnelle pour le traitement
-export const DOC_MANAGER_CONFIG = {
-  ALLOWED_EXTENSIONS: ['.md', '.txt', '.json', '.pdf'],
-  MAX_FILE_SIZE: 5 * 1024 * 1024, // 5 Mo
-  UPLOAD_TEMP_PATH: path.join(process.cwd(), 'data', 'uploads', 'temp'),
-};
-
 /**
  * Interface représentant un nœud dans l'arborescence de fichiers
  */
 export interface FileNode {
-  id: string;
   name: string;
-  type: 'file' | 'folder';
   path: string;
-  relativePath: string;
-  size?: number;
-  extension?: string;
-  collection?: string;
-  lastModified?: number;
+  type: 'file' | 'directory';
   children?: FileNode[];
+  size?: number;
+  modifiedAt?: Date;
+  collection?: string;
+  syncStatus?: 'pending' | 'syncing' | 'synced' | 'error';
+  error?: string;
 }
