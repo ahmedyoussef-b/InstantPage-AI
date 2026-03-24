@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronRight, ChevronDown, FileText, Folder, Trash2, Loader2, Zap } from 'lucide-react';
+import { ChevronRight, ChevronDown, FileText, Folder, Trash2, Loader2, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface FileNode {
@@ -19,12 +19,23 @@ export interface FileNode {
 interface FileTreeProps {
   nodes: FileNode[];
   expandedNodes: Set<string>;
+  selectedPath?: string;
   onToggleExpand: (path: string) => void;
+  onSelect: (node: FileNode) => void;
   onDelete: (node: FileNode) => void;
   level?: number;
 }
 
-export function FileTree({ nodes, expandedNodes, onToggleExpand, onDelete, level = 0 }: FileTreeProps) {
+export function FileTree({ 
+  nodes, 
+  expandedNodes, 
+  selectedPath,
+  onToggleExpand, 
+  onSelect,
+  onDelete, 
+  level = 0 
+}: FileTreeProps) {
+  
   const getSyncIcon = (status: FileNode['syncStatus']) => {
     switch (status) {
       case 'pending': return <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" />;
@@ -37,58 +48,84 @@ export function FileTree({ nodes, expandedNodes, onToggleExpand, onDelete, level
 
   return (
     <div className="space-y-0.5" style={{ paddingLeft: level > 0 ? 12 : 0 }}>
-      {nodes.map((node) => (
-        <div key={node.path} className="group">
-          <div
-            className={cn(
-              "flex items-center gap-2 py-2 px-3 rounded-xl hover:bg-white/5 transition-all cursor-pointer",
-              node.type === 'directory' ? 'font-bold text-gray-200' : 'text-gray-400'
-            )}
-            onClick={() => node.type === 'directory' && onToggleExpand(node.path)}
-          >
-            <div className="w-4 h-4 flex items-center justify-center shrink-0">
-              {node.type === 'directory' && (
-                expandedNodes.has(node.path) ? <ChevronDown className="w-3 h-3 text-gray-500" /> : <ChevronRight className="w-3 h-3 text-gray-500" />
+      {nodes.map((node) => {
+        const isSelected = selectedPath === node.path;
+        const isDirectory = node.type === 'directory';
+
+        return (
+          <div key={node.path} className="group">
+            <div
+              className={cn(
+                "flex items-center gap-2 py-2 px-3 rounded-xl transition-all cursor-pointer group/item",
+                isSelected 
+                  ? "bg-blue-600/20 border border-blue-500/30 text-white" 
+                  : "hover:bg-white/5 border border-transparent text-gray-400"
               )}
-            </div>
-            
-            {node.type === 'directory' ? (
-              <Folder className={cn("w-4 h-4", expandedNodes.has(node.path) ? "text-blue-400 fill-blue-400/10" : "text-gray-600")} />
-            ) : (
-              <FileText className="w-4 h-4 text-purple-400/50" />
-            )}
-            
-            <span className="flex-1 truncate text-[13px] tracking-tight">{node.name}</span>
-            
-            <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-all">
-              {getSyncIcon(node.syncStatus)}
-              
-              <button
+              onClick={() => onSelect(node)}
+            >
+              <div 
+                className="w-4 h-4 flex items-center justify-center shrink-0"
                 onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(node);
+                  if (isDirectory) {
+                    e.stopPropagation();
+                    onToggleExpand(node.path);
+                  }
                 }}
-                className="p-1.5 hover:bg-red-500/10 rounded-lg text-gray-600 hover:text-red-500 transition-colors"
-                title="Purger définitivement"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+                {isDirectory && (
+                  expandedNodes.has(node.path) ? <ChevronDown className="w-3 h-3 text-gray-500" /> : <ChevronRight className="w-3 h-3 text-gray-500" />
+                )}
+              </div>
+              
+              {isDirectory ? (
+                <Folder className={cn(
+                  "w-4 h-4 shrink-0", 
+                  isSelected ? "text-blue-400" : (expandedNodes.has(node.path) ? "text-blue-400/60" : "text-gray-600")
+                )} />
+              ) : (
+                <FileText className="w-4 h-4 text-purple-400/50 shrink-0" />
+              )}
+              
+              <span className={cn(
+                "flex-1 truncate text-[13px] tracking-tight",
+                isDirectory ? "font-bold" : "font-medium"
+              )}>
+                {node.name}
+              </span>
+              
+              <div className="flex items-center gap-3 opacity-0 group-hover/item:opacity-100 transition-all">
+                {isSelected && isDirectory && <Target className="w-3 h-3 text-blue-400 animate-pulse" />}
+                {getSyncIcon(node.syncStatus)}
+                
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(node);
+                  }}
+                  className="p-1.5 hover:bg-red-500/10 rounded-lg text-gray-600 hover:text-red-500 transition-colors"
+                  title="Purger définitivement"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
+            
+            {isDirectory && expandedNodes.has(node.path) && node.children && (
+              <div className="border-l border-white/5 ml-5 mt-0.5 mb-1 animate-in slide-in-from-top-1 duration-200">
+                <FileTree
+                  nodes={node.children}
+                  expandedNodes={expandedNodes}
+                  selectedPath={selectedPath}
+                  onToggleExpand={onToggleExpand}
+                  onSelect={onSelect}
+                  onDelete={onDelete}
+                  level={level + 1}
+                />
+              </div>
+            )}
           </div>
-          
-          {node.type === 'directory' && expandedNodes.has(node.path) && node.children && (
-            <div className="border-l border-white/5 ml-5 mt-0.5 mb-1 animate-in slide-in-from-top-1 duration-200">
-              <FileTree
-                nodes={node.children}
-                expandedNodes={expandedNodes}
-                onToggleExpand={onToggleExpand}
-                onDelete={onDelete}
-                level={level + 1}
-              />
-            </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

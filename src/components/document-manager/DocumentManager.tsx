@@ -6,7 +6,7 @@ import { FileTree, type FileNode } from './FileTree';
 import { UploadZone } from './UploadZone';
 import { SyncStatus, type SyncEvent } from './SyncStatus';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { Database, Search, RefreshCw, Layers } from 'lucide-react';
+import { Database, Search, RefreshCw, Layers, FolderPlus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -19,10 +19,12 @@ export default function DocumentManager() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   
+  // NOUVEAU: État pour le dossier sélectionné
+  const [selectedNode, setSelectedNode] = useState<FileNode | null>(null);
+  
   const { isConnected, lastEvent } = useWebSocket();
   const { toast } = useToast();
 
-  // Charger l'arborescence
   const loadTree = useCallback(async () => {
     try {
       const response = await fetch('/api/documents/tree');
@@ -35,7 +37,6 @@ export default function DocumentManager() {
     }
   }, []);
 
-  // Traiter les événements temps réel
   useEffect(() => {
     if (lastEvent) {
       setSyncEvents(prev => [{
@@ -56,11 +57,20 @@ export default function DocumentManager() {
     loadTree();
   }, [loadTree]);
 
+  // Utilitaire pour obtenir le chemin relatif par rapport à DOCUMENTS_ROOT
+  const getRelativePath = (fullPath: string) => {
+    // Dans un environnement réel, on nettoierait le chemin. Ici on suppose que le path commence après data/centrale_documents
+    const parts = fullPath.split(/[\\/]centrale_documents[\\/]/);
+    return parts.length > 1 ? parts[1] : '';
+  };
+
   const handleFileUpload = async (files: File[], targetPath: string) => {
+    const relativePath = getRelativePath(targetPath);
+    
     for (const file of files) {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('path', targetPath);
+      formData.append('path', relativePath);
       
       try {
         const response = await fetch('/api/documents/upload', {
@@ -72,7 +82,7 @@ export default function DocumentManager() {
         
         toast({
           title: "Document transféré",
-          description: `${file.name} est en attente d'indexation vectorielle.`,
+          description: `${file.name} assigné à ${selectedNode?.name || 'la destination'}.`,
         });
       } catch (error) {
         toast({
@@ -105,6 +115,7 @@ export default function DocumentManager() {
         description: "Le fichier et ses vecteurs ont été supprimés.",
       });
       
+      if (selectedNode?.path === node.path) setSelectedNode(null);
       loadTree();
     } catch (error) {
       toast({
@@ -120,20 +131,22 @@ export default function DocumentManager() {
       {/* Sidebar - Arborescence */}
       <div className="lg:w-96 border-r border-white/5 bg-black/20 flex flex-col min-h-0">
         <div className="p-6 border-b border-white/5 space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-600/20 rounded-2xl">
-              <Database className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-widest text-white leading-none mb-1">Bibliothèque</h2>
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Base de Connaissances</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-600/20 rounded-2xl">
+                <Database className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-widest text-white leading-none mb-1">Architecture</h2>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Base de Connaissances</p>
+              </div>
             </div>
           </div>
           
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
             <Input 
-              placeholder="Filtrer les dossiers..." 
+              placeholder="Rechercher un dossier..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="bg-black/40 border-white/5 rounded-xl pl-9 text-xs h-9 focus-visible:ring-blue-500"
@@ -151,6 +164,7 @@ export default function DocumentManager() {
             <FileTree 
               nodes={tree} 
               expandedNodes={expandedNodes}
+              selectedPath={selectedNode?.path}
               onToggleExpand={(path) => {
                 setExpandedNodes(prev => {
                   const next = new Set(prev);
@@ -158,6 +172,12 @@ export default function DocumentManager() {
                   else next.add(path);
                   return next;
                 });
+              }}
+              onSelect={(node) => {
+                if (node.type === 'directory') {
+                  setSelectedNode(node);
+                  console.log(`[UI][DOCS] Destination sélectionnée : ${node.name}`);
+                }
               }}
               onDelete={handleDelete}
             />
@@ -172,9 +192,9 @@ export default function DocumentManager() {
             <div className="p-6 border-b border-white/5 bg-black/10 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="p-2 bg-purple-600/20 rounded-xl">
-                  <Layers className="w-4 h-4 text-purple-400" />
+                  <FolderPlus className="w-4 h-4 text-purple-400" />
                 </div>
-                <h3 className="text-xs font-black uppercase text-white tracking-[0.2em]">Tableau de Pilotage Sync</h3>
+                <h3 className="text-xs font-black uppercase text-white tracking-[0.2em]">Assignation de documents</h3>
               </div>
               <div className={cn(
                 "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2",
@@ -185,19 +205,37 @@ export default function DocumentManager() {
               </div>
             </div>
 
+            {/* Zone d'Upload avec contexte de destination */}
             <UploadZone 
               onUpload={handleFileUpload}
-              currentPath="/"
+              currentPath={selectedNode?.path || ''}
+              currentDirName={selectedNode?.name || ''}
             />
             
             <div className="px-6">
               <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-3xl shadow-2xl">
                 <CardContent className="p-8 text-center">
-                  <div className="w-16 h-16 bg-gray-600/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                    <RefreshCw className="w-8 h-8 text-gray-500 opacity-20" />
-                  </div>
-                  <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-2">Aperçu du Document</p>
-                  <p className="text-xs text-gray-600 font-medium italic">Sélectionnez une ressource technique pour visualiser son contenu indexé dans ChromaDB.</p>
+                  {!selectedNode ? (
+                    <div className="space-y-4">
+                      <div className="w-16 h-16 bg-blue-600/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                        <Database className="w-8 h-8 text-blue-500 opacity-40" />
+                      </div>
+                      <p className="text-sm font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Guide d'approvisionnement</p>
+                      <p className="text-xs text-gray-500 font-medium max-w-sm mx-auto leading-relaxed">
+                        Pour classer vos documents, sélectionnez d'abord un dossier dans l'architecture à gauche, puis glissez vos fichiers dans la zone d'upload.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="w-16 h-16 bg-purple-600/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                        <RefreshCw className="w-8 h-8 text-purple-500 opacity-40" />
+                      </div>
+                      <p className="text-sm font-black text-purple-400 uppercase tracking-[0.2em] mb-2">Dossier Actif : {selectedNode.name}</p>
+                      <p className="text-xs text-gray-500 font-medium italic">
+                        Les documents ajoutés seront automatiquement indexés dans la collection correspondante.
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

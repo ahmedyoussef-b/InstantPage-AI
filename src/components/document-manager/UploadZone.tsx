@@ -2,12 +2,13 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Upload, X, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, X, FileText, CheckCircle, AlertCircle, Loader2, FolderOpen, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface UploadZoneProps {
   onUpload: (files: File[], targetPath: string) => Promise<void>;
   currentPath: string;
+  currentDirName: string;
 }
 
 interface UploadItem {
@@ -19,7 +20,7 @@ interface UploadItem {
   progress?: number;
 }
 
-export function UploadZone({ onUpload, currentPath }: UploadZoneProps) {
+export function UploadZone({ onUpload, currentPath, currentDirName }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -34,6 +35,8 @@ export function UploadZone({ onUpload, currentPath }: UploadZoneProps) {
   };
 
   const processFiles = useCallback(async (files: FileList) => {
+    if (!currentPath) return;
+
     const newUploads: UploadItem[] = Array.from(files).map(file => ({
       id: `${Date.now()}-${file.name}`,
       name: file.name,
@@ -64,7 +67,6 @@ export function UploadZone({ onUpload, currentPath }: UploadZoneProps) {
       }
     }
     
-    // Auto-nettoyage des succès
     setTimeout(() => {
       setUploads(prev => prev.filter(u => u.status !== 'success'));
       setIsUploading(false);
@@ -98,36 +100,74 @@ export function UploadZone({ onUpload, currentPath }: UploadZoneProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const hasSelectedDir = !!currentPath && currentPath !== '';
+
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-4">
+      {/* Indicateur de destination */}
+      <div className={cn(
+        "flex items-center justify-between p-4 rounded-2xl border transition-all duration-300",
+        hasSelectedDir ? "bg-blue-600/10 border-blue-500/30" : "bg-red-500/5 border-red-500/20"
+      )}>
+        <div className="flex items-center gap-4">
+          <div className={cn(
+            "p-2.5 rounded-xl shadow-lg",
+            hasSelectedDir ? "bg-blue-600 text-white" : "bg-red-500 text-white animate-pulse"
+          )}>
+            <FolderOpen className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase text-gray-500 tracking-widest leading-none mb-1">Dossier de Destination</p>
+            <p className={cn(
+              "text-sm font-black uppercase tracking-tight",
+              hasSelectedDir ? "text-white" : "text-red-400"
+            )}>
+              {hasSelectedDir ? currentDirName : "Veuillez sélectionner un dossier dans l'arbre"}
+            </p>
+          </div>
+        </div>
+        {hasSelectedDir && <Target className="w-5 h-5 text-blue-400 animate-pulse mr-2" />}
+      </div>
+
       <div
         className={cn(
-          "border-2 border-dashed rounded-3xl p-10 text-center transition-all duration-500",
-          isDragging 
-            ? "border-blue-500 bg-blue-500/5 shadow-2xl shadow-blue-500/10" 
-            : "border-white/5 bg-white/5 hover:border-white/10"
+          "border-2 border-dashed rounded-3xl p-10 text-center transition-all duration-500 relative overflow-hidden",
+          !hasSelectedDir ? "opacity-50 grayscale cursor-not-allowed border-white/5" : (
+            isDragging 
+              ? "border-blue-500 bg-blue-500/5 shadow-2xl shadow-blue-500/10 scale-[1.01]" 
+              : "border-white/5 bg-white/5 hover:border-white/10"
+          )
         )}
-        onDragOver={handleDragOver}
+        onDragOver={hasSelectedDir ? handleDragOver : undefined}
         onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        onDrop={hasSelectedDir ? handleDrop : undefined}
       >
+        {!hasSelectedDir && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+            <p className="text-xs font-black text-white uppercase tracking-[0.2em] px-6 py-3 bg-red-600 rounded-xl shadow-2xl">
+              Sélectionnez un dossier à gauche
+            </p>
+          </div>
+        )}
+
         <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/10">
           <Upload className="w-8 h-8 text-blue-400" />
         </div>
         <p className="text-sm text-gray-300 font-bold uppercase tracking-widest mb-2">
-          Glissez-déposez vos documents techniques
+          Glissez-déposez ici
         </p>
         <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-6">
           MD, TXT, JSON, PDF • Taille Max 10MB
         </p>
-        <label className="inline-block">
+        <label className={cn("inline-block", !hasSelectedDir && "pointer-events-none")}>
           <input
             type="file"
             multiple
+            disabled={!hasSelectedDir}
             className="hidden"
             onChange={handleFileSelect}
           />
-          <span className="px-8 py-3 bg-blue-600 text-white rounded-xl cursor-pointer hover:bg-blue-500 transition-all font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-500/20">
+          <span className="px-8 py-3 bg-blue-600 text-white rounded-xl cursor-pointer hover:bg-blue-500 transition-all font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-500/20 block">
             Parcourir les fichiers
           </span>
         </label>
@@ -135,7 +175,7 @@ export function UploadZone({ onUpload, currentPath }: UploadZoneProps) {
       
       {uploads.length > 0 && (
         <div className="mt-8 space-y-3 animate-in fade-in duration-500">
-          <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-[0.3em] ml-2 mb-4">Ingestion active</h4>
+          <h4 className="text-[10px] font-black uppercase text-gray-500 tracking-[0.3em] ml-2 mb-4">Transfert vers {currentDirName}</h4>
           {uploads.map(upload => (
             <div key={upload.id} className="flex items-center justify-between p-4 bg-white/5 border border-white/5 rounded-2xl shadow-xl hover:bg-white/10 transition-colors">
               <div className="flex items-center gap-4">
