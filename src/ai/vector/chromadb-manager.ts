@@ -1,3 +1,4 @@
+
 // src/ai/vector/chromadb-manager.ts
 import { ChromaClient, Collection, CollectionMetadata } from 'chromadb';
 import { EmbeddingFunction } from 'chromadb';
@@ -12,18 +13,20 @@ export class ChromaDBManager {
     private collections: Map<CollectionName, Collection> = new Map();
     private initialized: boolean = false;
 
-    // OPT-5: Circuit-breaker — évite les cascades de timeout quand ChromaDB est HS
+    // OPT-5: Circuit-breaker renforcé
     private cbFailures  = 0;
     private cbOpenUntil = 0;
-    private readonly CB_THRESHOLD = 3;          // échecs avant ouverture
-    private readonly CB_COOLDOWN  = 30_000;     // 30s avant tentative de réconnexion
+    private readonly CB_THRESHOLD = 3;
+    private readonly CB_COOLDOWN  = 30_000;
+
+    // STABILITY: Batch configuration pour éviter OOM (Out Of Memory)
+    private readonly MAX_BATCH_SIZE = 20; 
 
     private isCircuitOpen(): boolean {
         if (this.cbFailures < this.CB_THRESHOLD) return false;
         if (Date.now() > this.cbOpenUntil) {
-            // HALF-OPEN: on laisse passer une tentative
             logger.info('[CB] Circuit HALF-OPEN — tentative de reconnexion ChromaDB...');
-            this.cbFailures = this.CB_THRESHOLD - 1; // si éa marche, prochaine sera < seuil
+            this.cbFailures = this.CB_THRESHOLD - 1;
             return false;
         }
         return true;
@@ -43,7 +46,7 @@ export class ChromaDBManager {
 
     private constructor() {
         this.client = new ChromaClient({
-            path: process.env.CHROMADB_URL || 'http://localhost:8000'
+            path: (process.env.CHROMADB_URL || 'http://localhost:8000').trim()
         });
         this.embeddingFunction = getEmbeddingFunction();
     }
@@ -55,16 +58,13 @@ export class ChromaDBManager {
         return ChromaDBManager.instance;
     }
 
-    private convertToCollectionMetadata(metadata: Record<string, any>): CollectionMetadata {
-        const converted: Record<string, string | number | boolean> = {};
-        for (const [key, value] of Object.entries(metadata)) {
-            if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-                converted[key] = value;
-            } else {
-                converted[key] = JSON.stringify(value);
-            }
+    async getStatus(): Promise<{ connected: boolean; version?: string; error?: string }> {
+        try {
+            const version = await this.client.version();
+            return { connected: true, version };
+        } catch (e: any) {
+            return { connected: false, error: e.message };
         }
-        return converted as CollectionMetadata;
     }
 
     async initializeAllCollections(): Promise<void> {
@@ -104,15 +104,23 @@ export class ChromaDBManager {
         }
     }
 
+    private convertToCollectionMetadata(metadata: Record<string, any>): CollectionMetadata {
+        const converted: Record<string, string | number | boolean> = {};
+        for (const [key, value] of Object.entries(metadata)) {
+            if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+                converted[key] = value;
+            } else {
+                converted[key] = JSON.stringify(value);
+            }
+        }
+        return converted as CollectionMetadata;
+    }
+
     private sanitizeMetadata(metadata: Record<string, any>): Record<string, string | number | boolean> {
         const sanitized: Record<string, string | number | boolean> = {};
         for (const [key, value] of Object.entries(metadata)) {
             if (Array.isArray(value)) {
-                if (value.length > 0) {
-                    sanitized[key] = value.join(', ');
-                } else {
-                    // Ne pas inclure les tableaux vides pour éviter l'erreur ChromaDB
-                }
+                if (value.length > 0) sanitized[key] = value.join(', ');
             } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
                 sanitized[key] = value;
             } else if (value !== null && value !== undefined) {
@@ -122,47 +130,48 @@ export class ChromaDBManager {
         return sanitized;
     }
 
+    /**
+     * Ajoute des documents avec gestion de lots (Batching) pour éviter les erreurs de mémoire.
+     */
     async addDocuments(collectionName: CollectionName, documents: any[]): Promise<void> {
         if (!documents.length) return;
         if (this.isCircuitOpen()) {
             logger.warn(`[CB] Circuit ouvert — addDocuments ignoré pour ${collectionName}`);
             return;
         }
+
         try {
             const collection = await this.getOrCreateCollection(collectionName);
-            await collection.add({
-                ids: documents.map(d => d.id),
-                documents: documents.map(d => d.content),
-                metadatas: documents.map(d => this.sanitizeMetadata(d.metadata || {}))
-            });
+            
+            // Traitement par lots
+            for (let i = 0; i < documents.length; i += this.MAX_BATCH_SIZE) {
+                const batch = documents.slice(i, i + this.MAX_BATCH_SIZE);
+                logger.info(`[RAG] Ajout du lot ${Math.floor(i/this.MAX_BATCH_SIZE) + 1}/${Math.ceil(documents.length/this.MAX_BATCH_SIZE)} à ${collectionName}`);
+                
+                await collection.add({
+                    ids: batch.map(d => d.id),
+                    documents: batch.map(d => d.content),
+                    metadatas: batch.map(d => this.sanitizeMetadata(d.metadata || {}))
+                });
+            }
+            
             this.recordSuccess();
-            logger.info(`Added ${documents.length} docs to ${collectionName}`);
+            logger.info(`✅ Importation terminée : ${documents.length} docs dans ${collectionName}`);
         } catch (error) {
             this.recordFailure();
+            logger.error(`❌ Échec addDocuments sur ${collectionName}:`, error);
             throw error;
         }
     }
 
     async search(collectionName: CollectionName, query: string, options: any = {}): Promise<any> {
-        // OPT-5: Vérification circuit-breaker avant tout appel réseau
-        if (this.isCircuitOpen()) {
-            logger.warn(`[CB] Circuit ouvert — search ignoré pour ${collectionName}`);
-            return { documents: [], metadatas: [], distances: [], ids: [] };
-        }
+        if (this.isCircuitOpen()) return { documents: [], metadatas: [], distances: [], ids: [] };
 
         try {
             const collection = await this.getOrCreateCollection(collectionName);
-
-            // Formatter le filtre "where" pour supporter plusieurs conditions
             let where = options.where;
             if (where && Object.keys(where).length > 1) {
-                where = {
-                    "$and": Object.entries(where).map(([key, value]) => ({
-                        [key]: value
-                    }))
-                };
-            } else if (where && Object.keys(where).length === 0) {
-                where = undefined;
+                where = { "$and": Object.entries(where).map(([key, value]) => ({ [key]: value })) };
             }
 
             const results = await collection.query({
@@ -184,70 +193,23 @@ export class ChromaDBManager {
         }
     }
 
-    async searchWithFilters(collectionName: CollectionName, query: string, filters: any, nResults: number = 10): Promise<any> {
-        return this.search(collectionName, query, { nResults, where: filters });
-    }
-
-    async searchForProfile(profile: string, query: string, nResults: number = 5): Promise<any[]> {
-        const collections = ProfileToCollectionsMap[profile] || ['DOCUMENTS_GENERAUX'];
-        const results = [];
-        for (const col of collections) {
-            const res = await this.search(col, query, { nResults });
-            if (res.documents.length > 0) {
-                results.push({ collection: col, results: res });
+    async getAllCollectionsStats(): Promise<any[]> {
+        const stats = [];
+        for (const key of Object.keys(ChromaCollections)) {
+            try {
+                const s = await this.getCollectionStats(key as CollectionName);
+                stats.push(s);
+            } catch (e) {
+                stats.push({ name: key, error: "Indisponible" });
             }
         }
-        return results;
-    }
-
-    async getDocuments(collectionName: CollectionName, where?: any, limit: number = 100): Promise<any> {
-        const collection = await this.getOrCreateCollection(collectionName);
-        const results = await collection.get({ where, limit });
-        return {
-            documents: results.documents || [],
-            metadatas: results.metadatas || [],
-            ids: results.ids || []
-        };
+        return stats;
     }
 
     async getCollectionStats(collectionName: CollectionName): Promise<any> {
         const collection = await this.getOrCreateCollection(collectionName);
         const count = await collection.count();
         const config = (ChromaCollections as any)[collectionName];
-        return { count, name: config.name, metadata: config.metadata };
-    }
-
-    async logCollectionSummary(): Promise<void> {
-        console.log('\n📊 COLLECTIONS SUMMARY:');
-        for (const key of Object.keys(ChromaCollections)) {
-            const stats = await this.getCollectionStats(key as CollectionName);
-            console.log(`- ${key.padEnd(25)}: ${stats.count} docs`);
-        }
-    }
-
-    async deleteDocuments(collectionName: CollectionName, where: any): Promise<void> {
-        const collection = await this.getOrCreateCollection(collectionName);
-        await collection.delete({ where });
-    }
-
-    async updateDocument(collectionName: CollectionName, id: string, content?: string, metadata?: any): Promise<void> {
-        const collection = await this.getOrCreateCollection(collectionName);
-        await collection.update({
-            ids: [id],
-            documents: content ? [content] : undefined,
-            metadatas: metadata ? [metadata] : undefined
-        });
-    }
-
-    async resetAllCollections(): Promise<void> {
-        for (const key of Object.keys(ChromaCollections)) {
-            const config = (ChromaCollections as any)[key];
-            try {
-                await this.client.deleteCollection({ name: config.name });
-            } catch (e) {}
-        }
-        this.collections.clear();
-        this.initialized = false;
-        await this.initializeAllCollections();
+        return { count, id: collectionName, name: config.name, description: config.description };
     }
 }
