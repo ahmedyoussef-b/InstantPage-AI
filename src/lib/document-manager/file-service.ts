@@ -6,7 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { DOC_MANAGER_CONFIG, FileNode } from './config';
+import { DOCUMENTS_ROOT, COLLECTION_MAPPING, DOC_MANAGER_CONFIG, FileNode } from './config';
 import { logger } from '@/lib/logger';
 
 export class FileService {
@@ -16,7 +16,7 @@ export class FileService {
   async getFileTree(): Promise<FileNode[]> {
     try {
       await this.ensureRootExists();
-      return await this.scanDirectory(DOC_MANAGER_CONFIG.ROOT_PATH);
+      return await this.scanDirectory(DOCUMENTS_ROOT);
     } catch (error) {
       logger.error('[FILE-SERVICE] Erreur lors du scan de l\'arborescence:', error);
       return [];
@@ -29,7 +29,7 @@ export class FileService {
   async readFile(filePath: string): Promise<string> {
     const absolutePath = path.isAbsolute(filePath) 
       ? filePath 
-      : path.join(DOC_MANAGER_CONFIG.ROOT_PATH, filePath);
+      : path.join(DOCUMENTS_ROOT, filePath);
       
     try {
       return await fs.readFile(absolutePath, 'utf-8');
@@ -43,7 +43,7 @@ export class FileService {
    * Enregistre ou met à jour un document dans l'arborescence.
    */
   async saveFile(relativePath: string, content: string): Promise<string> {
-    const absolutePath = path.join(DOC_MANAGER_CONFIG.ROOT_PATH, relativePath);
+    const absolutePath = path.join(DOCUMENTS_ROOT, relativePath);
     const directory = path.dirname(absolutePath);
 
     try {
@@ -60,7 +60,7 @@ export class FileService {
    * Supprime un fichier ou un dossier.
    */
   async deleteItem(relativePath: string): Promise<void> {
-    const absolutePath = path.join(DOC_MANAGER_CONFIG.ROOT_PATH, relativePath);
+    const absolutePath = path.join(DOCUMENTS_ROOT, relativePath);
     try {
       await fs.rm(absolutePath, { recursive: true, force: true });
     } catch (error) {
@@ -73,14 +73,14 @@ export class FileService {
 
   private async ensureRootExists() {
     try {
-      await fs.access(DOC_MANAGER_CONFIG.ROOT_PATH);
+      await fs.access(DOCUMENTS_ROOT);
     } catch {
-      logger.info(`[FILE-SERVICE] Création de la racine documentaire: ${DOC_MANAGER_CONFIG.ROOT_PATH}`);
-      await fs.mkdir(DOC_MANAGER_CONFIG.ROOT_PATH, { recursive: true });
+      logger.info(`[FILE-SERVICE] Création de la racine documentaire: ${DOCUMENTS_ROOT}`);
+      await fs.mkdir(DOCUMENTS_ROOT, { recursive: true });
       
-      // Créer les sous-dossiers par défaut basés sur le schéma
-      for (const folder of Object.keys(DOC_MANAGER_CONFIG.FOLDER_TO_COLLECTION)) {
-        await fs.mkdir(path.join(DOC_MANAGER_CONFIG.ROOT_PATH, folder), { recursive: true });
+      // Créer les sous-dossiers par défaut basés sur le mapping
+      for (const folder of Object.keys(COLLECTION_MAPPING)) {
+        await fs.mkdir(path.join(DOCUMENTS_ROOT, folder), { recursive: true });
       }
     }
   }
@@ -91,7 +91,7 @@ export class FileService {
 
     for (const item of items) {
       const fullPath = path.join(dirPath, item.name);
-      const relativePath = path.relative(DOC_MANAGER_CONFIG.ROOT_PATH, fullPath);
+      const relativePath = path.relative(DOCUMENTS_ROOT, fullPath);
       const stats = await fs.stat(fullPath);
       
       // ID unique basé sur le chemin pour la stabilité de l'UI
@@ -105,7 +105,7 @@ export class FileService {
           type: 'folder',
           path: fullPath,
           relativePath,
-          collection: DOC_MANAGER_CONFIG.FOLDER_TO_COLLECTION[item.name],
+          collection: COLLECTION_MAPPING[item.name],
           children,
           lastModified: stats.mtimeMs
         });
