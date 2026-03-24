@@ -1,61 +1,64 @@
 
 import { NextRequest } from 'next/server';
+import { fileService } from '@/lib/document-manager/file-service';
 
 /**
- * @fileOverview WebSocket Handler - Innovation Elite 32.
- * 
- * IMPORTANT : Les Route Handlers de Next.js App Router ne supportent pas nativement
- * l'upgrade WebSocket sans un serveur Node.js personnalisé (Express/Fastify).
- * 
- * Dans l'architecture Elite 32 Local, ce fichier sert de :
- * 1. Endpoint de métadonnées pour le protocole de synchronisation.
- * 2. Documentation pour l'intégration d'un serveur de signalement temps réel.
- * 3. Fallback pour vérifier la disponibilité du service de synchronisation.
+ * @fileOverview SSE Handler - Synchronisation temps réel native pour Next.js 15.
+ * Les Route Handlers ne supportent pas nativement les WebSockets/Socket.io sans serveur personnalisé.
+ * SSE est l'alternative recommandée pour les notifications serveur vers client (RAG Sync).
  */
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
-  const protocol = request.headers.get('x-forwarded-proto') || 'http';
-  const host = request.headers.get('host');
+export async function GET(req: NextRequest) {
+  const responseStream = new TransformStream();
+  const writer = responseStream.writable.getWriter();
+  const encoder = new TextEncoder();
 
-  return new Response(
-    JSON.stringify({
-      service: "Elite 32 Sync Engine",
-      status: "Ready",
-      ws_endpoint: `${protocol === 'https' ? 'wss' : 'ws'}://${host}/api/ws`,
-      capabilities: [
-        "REALTIME_FILE_WATCHING",
-        "CHROMA_AUTO_REINDEX",
-        "SYNC_HEARTBEAT",
-        "INGEST_NOTIFICATIONS"
-      ],
-      note: "Requiert un serveur Node.js avec support WebSocket upgrade."
-    }),
-    {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store'
-      },
+  const sendEvent = (type: string, payload: any) => {
+    const data = JSON.stringify({ type, ...payload, timestamp: Date.now() });
+    writer.write(encoder.encode(`data: ${data}\n\n`));
+  };
+
+  // Listeners pour le service de fichiers
+  const handlers = {
+    'file-changed': (data: any) => sendEvent('file-changed', data),
+    'sync-start': (data: any) => sendEvent('sync-start', data),
+    'sync-complete': (data: any) => sendEvent('sync-complete', data),
+    'sync-error': (data: any) => sendEvent('sync-error', data)
+  };
+
+  // S'abonner aux événements du service de fichiers (Singleton)
+  Object.entries(handlers).forEach(([event, handler]) => {
+    fileService.on(event, handler);
+  });
+
+  // Envoyer un événement initial de confirmation
+  sendEvent('CONNECTED', { message: 'Moteur de synchronisation Elite prêt' });
+
+  // Heartbeat toutes les 15 secondes pour maintenir la connexion active via les proxys
+  const heartbeat = setInterval(() => {
+    try {
+      writer.write(encoder.encode(': heartbeat\n\n'));
+    } catch (e) {
+      clearInterval(heartbeat);
     }
-  );
-}
+  }, 15000);
 
-/**
- * POST /api/ws/notify
- * Permet au FileWatcher local d'envoyer des notifications de changement
- * au frontend via ce point d'entrée si le WebSocket n'est pas établi.
- */
-export async function POST(request: NextRequest) {
-  try {
-    const event = await request.json();
-    console.log(`[WS-NOTIFY] Événement reçu du watcher : ${event.type}`);
-    
-    // Ici, on pourrait broadcaster l'événement si un gestionnaire global existait.
-    
-    return Response.json({ success: true, delivered: Date.now() });
-  } catch (error) {
-    return Response.json({ success: false }, { status: 400 });
-  }
+  // Nettoyage rigoureux lors de la déconnexion du client (fermeture onglet, etc.)
+  req.signal.addEventListener('abort', () => {
+    clearInterval(heartbeat);
+    Object.entries(handlers).forEach(([event, handler]) => {
+      fileService.off(event, handler);
+    });
+    writer.close();
+  });
+
+  return new Response(responseStream.readable, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+    },
+  });
 }

@@ -1,12 +1,12 @@
 
 'use client';
 
-/**
- * @fileOverview useWebSocket - Innovation Elite 32.
- * Version simplifiée pour la gestion des événements de synchronisation.
- */
-
 import { useState, useEffect, useRef } from 'react';
+
+/**
+ * @fileOverview useWebSocket - Version optimisée via Server-Sent Events (SSE).
+ * Gère la connexion persistante au flux d'événements de synchronisation pour l'UI DocumentManager.
+ */
 
 export interface WSEvent {
   type: 'file-changed' | 'sync-start' | 'sync-complete' | 'sync-error' | 'CONNECTED';
@@ -20,44 +20,44 @@ export interface WSEvent {
 export function useWebSocket(url?: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<WSEvent | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const socketUrl = url || `${protocol}//${host}/api/ws`;
+    const endpoint = url || '/api/ws';
+    console.log(`[SYNC] Initialisation du canal de synchronisation : ${endpoint}`);
 
-    try {
-      console.log(`[WS] Tentative de connexion : ${socketUrl}`);
-      const ws = new WebSocket(socketUrl);
+    // Utilisation de l'API native EventSource pour SSE
+    const es = new EventSource(endpoint);
 
-      ws.onopen = () => {
-        console.log('[WS] Connecté au serveur de synchronisation.');
-        setIsConnected(true);
-      };
+    es.onopen = () => {
+      console.log('[SYNC] Canal de synchronisation opérationnel.');
+      setIsConnected(true);
+    };
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as WSEvent;
-          setLastEvent({ ...data, timestamp: Date.now() });
-        } catch (e) {
-          console.error('[WS] Erreur parsing message:', e);
-        }
-      };
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as WSEvent;
+        setLastEvent(data);
+      } catch (e) {
+        // Ignorer les heartbeats ou messages techniques
+      }
+    };
 
-      ws.onclose = () => {
-        setIsConnected(false);
-        console.log('[WS] Connexion fermée.');
-      };
-
-      socketRef.current = ws;
-      return () => ws.close();
-    } catch (err) {
-      console.warn('[WS] Serveur WebSocket indisponible.');
+    es.onerror = () => {
+      console.warn('[SYNC] Déconnexion du canal. Reconnexion automatique en cours...');
       setIsConnected(false);
-    }
+    };
+
+    eventSourceRef.current = es;
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        console.log('[SYNC] Canal de synchronisation fermé.');
+      }
+    };
   }, [url]);
 
   return { isConnected, lastEvent };
