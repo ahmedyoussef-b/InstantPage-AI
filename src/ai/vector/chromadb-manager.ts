@@ -164,6 +164,27 @@ export class ChromaDBManager {
         }
     }
 
+    /**
+     * Supprime des documents d'une collection
+     */
+    async deleteDocuments(collectionName: CollectionName, ids: string[]): Promise<void> {
+        if (this.isCircuitOpen()) {
+            logger.warn(`[CB] Circuit ouvert — deleteDocuments ignoré pour ${collectionName}`);
+            return;
+        }
+
+        try {
+            const collection = await this.getOrCreateCollection(collectionName);
+            await collection.delete({ ids });
+            this.recordSuccess();
+            logger.info(`[RAG] Suppression réussie de ${ids.length} docs dans ${collectionName}`);
+        } catch (error) {
+            this.recordFailure();
+            logger.error(`❌ Échec deleteDocuments sur ${collectionName}:`, error);
+            throw error;
+        }
+    }
+
     async search(collectionName: CollectionName, query: string, options: any = {}): Promise<any> {
         if (this.isCircuitOpen()) return { documents: [], metadatas: [], distances: [], ids: [] };
 
