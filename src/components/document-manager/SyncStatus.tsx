@@ -1,22 +1,29 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Activity, ShieldCheck, Cpu, Database, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Activity, ShieldCheck, Cpu, Database, Server } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-export default function SyncStatus() {
-  const [status, setStatus] = useState<any>(null);
+interface SyncStatusProps {
+  stats: {
+    files: number;
+    folders: number;
+    size: string;
+  };
+}
+
+export default function SyncStatus({ stats }: SyncStatusProps) {
+  const [health, setHealth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/admin/diagnostics');
       const data = await res.json();
-      setStatus(data);
+      setHealth(data);
     } catch (e) {
-      console.error("Erreur diagnostic", e);
+      console.error("Diagnostic error", e);
     } finally {
       setLoading(false);
     }
@@ -24,63 +31,65 @@ export default function SyncStatus() {
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 30000); // Toutes les 30s
+    const interval = setInterval(fetchStatus, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  if (loading && !status) return <div className="h-20 animate-pulse bg-white/5 rounded-2xl" />;
-
-  const isHealthy = status?.status === 'healthy';
+  const isHealthy = health?.status === 'healthy';
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl">
-        <CardContent className="p-4 flex items-center gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 flex-[2]">
+      {/* Statut Système */}
+      <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl shadow-xl hover:border-white/10 transition-colors">
+        <CardContent className="p-4 flex items-center gap-4">
           <div className={cn(
-            "p-2 rounded-xl",
-            isHealthy ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-500"
+            "p-3 rounded-xl shadow-lg",
+            isHealthy ? "bg-green-500/20 text-green-500 shadow-green-500/5" : "bg-red-500/20 text-red-500 animate-pulse shadow-red-500/5"
           )}>
-            <Activity className="w-4 h-4" />
+            <Activity className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Statut Système</p>
-            <p className="text-xs font-bold truncate">{isHealthy ? 'OPÉRATIONNEL' : 'DÉGRADÉ'}</p>
+            <p className="text-[9px] font-black text-gray-500 uppercase tracking-[0.2em] mb-0.5">État Global</p>
+            <p className="text-xs font-black truncate uppercase tracking-tight">{isHealthy ? 'Nominal' : 'Dégradé'}</p>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl">
-        <CardContent className="p-4 flex items-center gap-3">
-          <div className="p-2 bg-blue-500/20 text-blue-500 rounded-xl">
-            <Database className="w-4 h-4" />
+      {/* Volume de données */}
+      <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl shadow-xl">
+        <CardContent className="p-4 flex items-center gap-4">
+          <div className="p-3 bg-blue-500/20 text-blue-500 rounded-xl shadow-lg shadow-blue-500/5">
+            <Database className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Collections</p>
-            <p className="text-xs font-bold">{status?.components?.chromadb?.collectionsCount || 0} Strates</p>
+            <p className="text-[9px] font-black text-gray-500 uppercase tracking-[0.2em] mb-0.5">Base Vectorielle</p>
+            <p className="text-xs font-black tracking-tight">{stats.files} Objets</p>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl">
-        <CardContent className="p-4 flex items-center gap-3">
-          <div className="p-2 bg-purple-500/20 text-purple-500 rounded-xl">
-            <Cpu className="w-4 h-4" />
+      {/* Poids total */}
+      <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl shadow-xl">
+        <CardContent className="p-4 flex items-center gap-4">
+          <div className="p-3 bg-purple-500/20 text-purple-500 rounded-xl shadow-lg shadow-purple-500/5">
+            <Server className="w-5 h-5" />
           </div>
-          <div>
-            <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Moteur Embedding</p>
-            <p className="text-xs font-bold truncate">Nomic-Embed-Text</p>
+          <div className="min-w-0">
+            <p className="text-[9px] font-black text-gray-500 uppercase tracking-[0.2em] mb-0.5">Empreinte Disque</p>
+            <p className="text-xs font-black tracking-tight truncate">{stats.size}</p>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl">
-        <CardContent className="p-4 flex items-center gap-3">
-          <div className="p-2 bg-yellow-500/20 text-yellow-500 rounded-xl">
-            <ShieldCheck className="w-4 h-4" />
+      {/* Sécurité Mémoire */}
+      <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-2xl shadow-xl">
+        <CardContent className="p-4 flex items-center gap-4">
+          <div className="p-3 bg-yellow-500/20 text-yellow-500 rounded-xl shadow-lg shadow-yellow-500/5">
+            <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Mémoire Heaps</p>
-            <p className="text-xs font-bold">{status?.components?.system?.heapUsed || '...'}</p>
+            <p className="text-[9px] font-black text-gray-500 uppercase tracking-[0.2em] mb-0.5">Heap JS</p>
+            <p className="text-xs font-black tracking-tight">{health?.components?.system?.heapUsed || '...'}</p>
           </div>
         </CardContent>
       </Card>
