@@ -8,8 +8,6 @@ import {
   MessageSquare, 
   Camera, 
   HardDrive, 
-  UploadCloud, 
-  Database, 
   BookOpen, 
   Cpu, 
   ShieldCheck 
@@ -21,6 +19,11 @@ interface SidebarProps {
   collapsed?: boolean;
 }
 
+/**
+ * SidebarContent - Menu latéral optimisé pour l'architecture Elite 32.
+ * Les fonctionnalités d'upload et de gestion sont désormais centralisées 
+ * dans le hub "Base de Connaissances" (/admin).
+ */
 export default function SidebarContent({ collapsed = false }: SidebarProps) {
   return (
     <div className="p-4 md:p-6 flex flex-col h-full bg-[#171717] overflow-hidden">
@@ -34,7 +37,7 @@ export default function SidebarContent({ collapsed = false }: SidebarProps) {
         {!collapsed && (
           <div className="animate-in fade-in slide-in-from-left-2 duration-300">
             <div className="font-bold text-white tracking-tighter text-lg leading-none">AGENTIC</div>
-            <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest mt-1">Hybrid RAG AI</div>
+            <div className="text-[10px] font-black text-blue-400 uppercase tracking-widest mt-1">Elite 32 RAG</div>
           </div>
         )}
       </Link>
@@ -43,7 +46,7 @@ export default function SidebarContent({ collapsed = false }: SidebarProps) {
         <div className="space-y-1">
           {!collapsed && (
             <div className="text-[10px] font-bold text-gray-600 px-3 py-2 uppercase tracking-[0.2em] mb-2 animate-in fade-in">
-              Navigation
+              Intelligence & Données
             </div>
           )}
 
@@ -68,24 +71,8 @@ export default function SidebarContent({ collapsed = false }: SidebarProps) {
             "flex items-center gap-3 px-4 py-3 text-sm text-gray-400 hover:bg-white/5 hover:text-white rounded-xl transition-all group",
             collapsed && "justify-center px-0"
           )}>
-            <HardDrive className="w-4 h-4 group-hover:text-purple-400 transition-colors shrink-0" />
+            <HardDrive className="w-4 h-4 group-hover:text-blue-400 transition-colors shrink-0" />
             {!collapsed && <span className="truncate">Base de Connaissances</span>}
-          </Link>
-
-          <Link href="/documents/upload" className={cn(
-            "flex items-center gap-3 px-4 py-3 text-sm text-gray-400 hover:bg-white/5 hover:text-white rounded-xl transition-all group",
-            collapsed && "justify-center px-0"
-          )}>
-            <UploadCloud className="w-4 h-4 group-hover:text-green-400 transition-colors shrink-0" />
-            {!collapsed && <span className="truncate">Upload Documents</span>}
-          </Link>
-
-          <Link href="/documents/manage" className={cn(
-            "flex items-center gap-3 px-4 py-3 text-sm text-gray-400 hover:bg-white/5 hover:text-white rounded-xl transition-all group",
-            collapsed && "justify-center px-0"
-          )}>
-            <Database className="w-4 h-4 group-hover:text-blue-400 transition-colors shrink-0" />
-            {!collapsed && <span className="truncate">Gérer Documents</span>}
           </Link>
 
           <Link href="/docs" className={cn(
@@ -101,10 +88,10 @@ export default function SidebarContent({ collapsed = false }: SidebarProps) {
           <div className="bg-white/5 rounded-2xl p-4 border border-white/5 space-y-3">
             <div className="flex items-center gap-2">
               <Cpu className="w-4 h-4 text-yellow-400" />
-              <span className="text-[10px] font-black text-white uppercase tracking-widest">Innovation AI</span>
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">Pipeline Actif</span>
             </div>
             <p className="text-[9px] text-gray-500 leading-relaxed">
-              Le RAG Hybride combine sémantique et graphe de relations pour une précision maximale.
+              Le RAG Hybride surveille vos fichiers en temps réel pour une précision industrielle.
             </p>
           </div>
         )}
