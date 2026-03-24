@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -13,14 +12,10 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import SidebarContent from '@/components/layout/Sidebar';
 
-// Load heavy components dynamically to optimize memory and compilation speed
+// Chargement dynamique du chat pour optimiser la performance
 const Chat = dynamic(() => import('@/components/chat/Chat'), { 
   ssr: false,
-  loading: () => <div className="flex-1 flex items-center justify-center bg-[#212121] text-gray-500">Initialisation du Chat...</div>
-});
-
-const Upload = dynamic(() => import('@/components/upload/DocumentUploader'), { 
-  ssr: false 
+  loading: () => <div className="flex-1 flex items-center justify-center bg-[#212121] text-gray-500 font-bold uppercase tracking-widest text-[10px]">Initialisation de l'IA Elite 32...</div>
 });
 
 export default function HomePage() {
@@ -28,7 +23,7 @@ export default function HomePage() {
 
   return (
     <main className="h-screen flex bg-[#171717] overflow-hidden selection:bg-blue-500/30">
-      {/* Desktop Sidebar */}
+      {/* Sidebar Bureau */}
       <aside className={cn(
         "flex-col hidden lg:flex border-r border-white/5 bg-[#171717] transition-all duration-300 relative z-30",
         isCollapsed ? "w-20" : "w-72"
@@ -44,9 +39,9 @@ export default function HomePage() {
         <SidebarContent collapsed={isCollapsed} />
       </aside>
 
-      {/* Main Content Area */}
+      {/* Zone de contenu principale */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#212121]">
-        {/* Mobile Header */}
+        {/* Header Mobile */}
         <header className="h-16 border-b border-white/5 flex items-center px-4 justify-between lg:hidden bg-[#171717] sticky top-0 z-20">
           <div className="flex items-center gap-3">
             <Sheet>
@@ -66,13 +61,10 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* Chat Interface */}
+        {/* Interface de Chat */}
         <div className="flex-1 overflow-hidden relative">
           <Chat />
         </div>
-
-        {/* Document Ingestion Bar (Optional, usually visible in bottom or side) */}
-        {/* <Upload /> */}
       </div>
     </main>
   );
