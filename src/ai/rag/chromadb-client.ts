@@ -1,7 +1,9 @@
+
 ﻿// src/ai/rag/chromadb-client.ts
-// Client ChromaDB simplifié
+// Client ChromaDB simplifié utilisant impérativement l'embedding local
 
 import { ChromaClient } from 'chromadb';
+import { getEmbeddingFunction } from '@/ai/vector/embeddings';
 
 let client: ChromaClient | null = null;
 let collection: any = null;
@@ -15,15 +17,29 @@ export async function getChromaClient(): Promise<ChromaClient> {
   return client;
 }
 
-export async function getCollection(collectionName: string = "DOCUMENTS_TECHNIQUES") {
+export async function getCollection(collectionName: string = "centrale_equipements_principaux") {
   if (!collection) {
     const chromaClient = await getChromaClient();
+    const embeddingFunction = getEmbeddingFunction();
+    
     try {
-      collection = await chromaClient.getCollection({ name: collectionName });
-      console.log(`[RAG] Collection ${collectionName} chargée`);
+      // ✅ Toujours passer embeddingFunction pour éviter le chargement distant par défaut
+      collection = await chromaClient.getCollection({ 
+        name: collectionName,
+        embeddingFunction
+      });
+      console.log(`[RAG] Collection ${collectionName} chargée avec succès.`);
     } catch (error) {
-      console.log(`[RAG] Collection ${collectionName} non trouvée`);
-      collection = null;
+      console.log(`[RAG] Collection ${collectionName} non trouvée, tentative de création...`);
+      try {
+        collection = await chromaClient.createCollection({
+          name: collectionName,
+          embeddingFunction
+        });
+      } catch (e) {
+        console.error(`[RAG] Impossible d'accéder à ChromaDB pour ${collectionName}`);
+        collection = null;
+      }
     }
   }
   return collection;
@@ -38,7 +54,7 @@ export async function searchDocuments(query: string, nResults: number = 3): Prom
     const coll = await getCollection();
     if (!coll) return null;
     
-    console.log(`[RAG] Recherche: "${query}"`);
+    console.log(`[RAG] Recherche locale: "${query}"`);
     
     const results = await coll.query({
       queryTexts: [query],
@@ -46,7 +62,7 @@ export async function searchDocuments(query: string, nResults: number = 3): Prom
     });
     
     if (results.documents && results.documents[0]?.length > 0) {
-      console.log(`[RAG] ✅ ${results.documents[0].length} documents trouvés`);
+      console.log(`[RAG] ✅ ${results.documents[0].length} segments trouvés.`);
       return {
         documents: results.documents[0],
         metadatas: results.metadatas?.[0] || [],
@@ -54,11 +70,11 @@ export async function searchDocuments(query: string, nResults: number = 3): Prom
       };
     }
     
-    console.log(`[RAG] ❌ Aucun document trouvé`);
+    console.log(`[RAG] ❌ Aucun segment ne correspond à la requête.`);
     return null;
     
   } catch (error: any) {
-    console.error('[RAG] Erreur:', error.message);
+    console.error('[RAG] Erreur lors de la recherche:', error.message);
     return null;
   }
 }
