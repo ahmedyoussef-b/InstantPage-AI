@@ -9,19 +9,23 @@ import {
   Activity,
   HardDrive,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  LayoutGrid
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import FileTree from './FileTree';
+import UploadZone from './UploadZone';
+import SyncStatus from './SyncStatus';
 import { FileNode } from '@/lib/document-manager/config';
 
 export default function DocumentManager() {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedPath, setSelectedPath] = useState('');
   const [stats, setStats] = useState({ files: 0, folders: 0, size: '0 MB' });
   const { toast } = useToast();
 
@@ -109,98 +113,79 @@ export default function DocumentManager() {
     }
   };
 
-  const filteredTree = tree; // Filtre de recherche à implémenter si nécessaire
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="bg-white/5 border-white/5 text-white overflow-hidden">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-blue-600/20 rounded-2xl">
-              <Database className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Collections</p>
-              <p className="text-xl font-black">{stats.folders}</p>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-white/5 border-white/5 text-white overflow-hidden">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-purple-600/20 rounded-2xl">
-              <HardDrive className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Documents</p>
-              <p className="text-xl font-black">{stats.files}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <SyncStatus />
 
-        <Card className="bg-white/5 border-white/5 text-white overflow-hidden">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-green-600/20 rounded-2xl">
-              <Activity className="w-5 h-5 text-green-400" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Side: Tree & Upload */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="bg-white/5 border-white/5 text-white rounded-3xl overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-white/5 flex items-center justify-between bg-black/20">
+              <div className="flex items-center gap-4 flex-1">
+                <div className="p-2 bg-blue-600/20 rounded-xl">
+                  <LayoutGrid className="w-4 h-4 text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase text-gray-300">Explorateur Technique</h3>
+                  <p className="text-[10px] font-bold text-gray-500 tracking-widest">{stats.files} documents indexés</p>
+                </div>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={loadTree} 
+                disabled={loading}
+                className="text-gray-400 hover:text-white"
+              >
+                <RefreshCw className={loading ? "animate-spin w-4 h-4" : "w-4 h-4"} />
+              </Button>
             </div>
-            <div>
-              <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Index Vectoriel</p>
-              <p className="text-xl font-black">{stats.size}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      <Card className="bg-white/5 border-white/5 text-white rounded-3xl overflow-hidden shadow-2xl">
-        <div className="p-6 border-b border-white/5 flex items-center justify-between bg-black/20">
-          <div className="flex items-center gap-4 flex-1 max-w-md">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <Input 
-                placeholder="Rechercher dans les collections..." 
-                className="bg-black/40 border-white/10 pl-10 h-10 rounded-xl text-xs"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={loadTree} 
-              disabled={loading}
-              className="text-gray-400 hover:text-white"
-            >
-              <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
-            </Button>
-            <Button className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold px-4">
-              <UploadCloud className="w-4 h-4 mr-2" /> Importer
-            </Button>
-          </div>
+            <CardContent className="p-6 min-h-[400px]">
+              {loading ? (
+                <div className="flex flex-col items-center justify-center h-64 text-gray-500 gap-4">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                  <p className="text-[10px] font-black uppercase tracking-widest tracking-[0.2em]">Synchronisation avec ChromaDB...</p>
+                </div>
+              ) : (
+                <FileTree 
+                  nodes={tree} 
+                  onDelete={handleDelete} 
+                  onVectorize={handleVectorize} 
+                />
+              )}
+            </CardContent>
+          </Card>
         </div>
 
-        <CardContent className="p-6 min-h-[400px]">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center h-64 text-gray-500 gap-4">
-              <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-              <p className="text-[10px] font-black uppercase tracking-widest">Synchronisation avec ChromaDB...</p>
+        {/* Right Side: Upload Zone */}
+        <div className="space-y-6">
+          <Card className="bg-[#2f2f2f] border-white/5 text-white rounded-3xl p-6">
+            <h3 className="text-xs font-black uppercase text-blue-400 mb-6 flex items-center gap-2 tracking-widest">
+              <UploadCloud className="w-4 h-4" /> Ingestion Directe
+            </h3>
+            <UploadZone targetPath={selectedPath} onUploadSuccess={loadTree} />
+            <div className="mt-6 p-4 bg-black/20 rounded-2xl border border-white/5">
+              <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Instructions</p>
+              <p className="text-[10px] text-gray-400 leading-relaxed italic">
+                Sélectionnez un dossier dans l'arborescence pour cibler une collection spécifique, ou uploadez à la racine pour un classement automatique.
+              </p>
             </div>
-          ) : (
-            <FileTree 
-              nodes={filteredTree} 
-              onDelete={handleDelete} 
-              onVectorize={handleVectorize} 
-            />
-          )}
-        </CardContent>
-      </Card>
+          </Card>
 
-      <div className="bg-blue-600/10 border border-blue-500/20 rounded-2xl p-4 flex items-center gap-4">
-        <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0" />
-        <p className="text-[10px] text-blue-200/70 font-medium leading-relaxed italic">
-          "Votre base de connaissances est automatiquement synchronisée avec ChromaDB. Chaque modification sur le système de fichiers déclenche une mise à jour des embeddings nomic-embed-text."
-        </p>
+          <Card className="bg-white/5 border-white/5 text-white rounded-3xl p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="p-2 bg-green-500/20 rounded-xl">
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+              </div>
+              <p className="text-[10px] font-black uppercase text-gray-300 tracking-widest">Index Vectoriel Actif</p>
+            </div>
+            <p className="text-[10px] text-gray-500 leading-relaxed">
+              Le modèle <span className="text-blue-400 font-bold">nomic-embed-text</span> génère des embeddings à 768 dimensions pour une précision sémantique maximale.
+            </p>
+          </Card>
+        </div>
       </div>
     </div>
   );
