@@ -11,10 +11,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { ChromaDBManager, CollectionName, createStandardMetadata } from '@/ai/vector/chromadb-manager'; // Assuming these exist based on project structure
-import { getLogger } from 'genkit';
-
-const logger = getLogger();
+import { ChromaDBManager, CollectionName, createStandardMetadata } from '@/ai/vector/chromadb-manager';
 
 // --- Schemas --- //
 
@@ -59,10 +56,7 @@ async function parseDocumentContent(fileDataUri: string, fileName: string): Prom
     case 'text/plain':
       return buffer.toString('utf-8');
     case 'application/pdf':
-      // TODO: Implement actual PDF parsing using a library like 'pdf-parse'.
-      // The architecture analysis indicates 'pdf-parse' is not installed in package.json.
-      // For now, returning a placeholder string and logging a warning.
-      logger.warn(`PDF parsing for ${fileName} is a placeholder. Real content extraction requires 'pdf-parse' or similar library.`);
+      console.warn(`PDF parsing for ${fileName} is a placeholder. Real content extraction requires 'pdf-parse' or similar library.`);
       return `This is a simulated placeholder for PDF content from file: ${fileName}. Actual content extraction is not implemented.`;
     default:
       throw new Error(`Unsupported MIME type for ingestion: ${mimeType}. Only 'text/plain' and 'application/pdf' are currently recognized.`);
@@ -109,7 +103,7 @@ const ingestDocumentFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      logger.info(`Starting document ingestion for file: ${input.fileName} into collection: ${input.collectionName}`);
+      console.log(`Starting document ingestion for file: ${input.fileName} into collection: ${input.collectionName}`);
 
       const extractedText = await parseDocumentContent(input.fileDataUri, input.fileName);
       const textChunks = chunkText(extractedText);
@@ -120,7 +114,7 @@ const ingestDocumentFlow = ai.defineFlow(
       const indexedChunkIds: string[] = [];
 
       if (textChunks.length === 0) {
-        logger.warn(`No content extracted or chunks generated for file: ${input.fileName}. Skipping indexing.`);
+        console.warn(`No content extracted or chunks generated for file: ${input.fileName}. Skipping indexing.`);
         return {
           success: true,
           message: `No content to index for ${input.fileName}.`,
@@ -155,17 +149,17 @@ const ingestDocumentFlow = ai.defineFlow(
         // Add the chunk, its embedding, and metadata to the specified ChromaDB collection
         await chromaDBManager.addDocument(input.collectionName, docId, embedding, chunk, metadata);
         indexedChunkIds.push(docId);
-        logger.debug(`Indexed chunk ${i + 1}/${textChunks.length} (ID: ${docId}) for file: ${input.fileName}`);
+        console.log(`Indexed chunk ${i + 1}/${textChunks.length} (ID: ${docId}) for file: ${input.fileName}`);
       }
 
-      logger.info(`Successfully ingested ${indexedChunkIds.length} chunks from ${input.fileName}.`);
+      console.log(`Successfully ingested ${indexedChunkIds.length} chunks from ${input.fileName}.`);
       return {
         success: true,
         message: `Successfully ingested ${indexedChunkIds.length} chunks from ${input.fileName}.`,
         indexedChunkIds,
       };
     } catch (error: any) {
-      logger.error(`Failed to ingest document ${input.fileName}: ${error.message}`, error);
+      console.error(`Failed to ingest document ${input.fileName}: ${error.message}`, error);
       return {
         success: false,
         message: `Failed to ingest document '${input.fileName}': ${error.message}`,
