@@ -37,7 +37,7 @@ export async function PUT(
     
     const metadata = searchRes.metadatas[0] || {};
 
-    // Mettre à jour le document principal dans ChromaDB
+    // Mettre à jour le document principal dans ChromaDB via upsert
     await manager.upsertDocuments(collectionName, [{
       id: id,
       content: text,
