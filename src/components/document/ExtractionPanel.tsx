@@ -1,3 +1,5 @@
+// src/components/document/ExtractionPanel.tsx
+
 'use client';
 
 import { useState } from 'react';

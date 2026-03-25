@@ -1,3 +1,5 @@
+// src/components/document/DocumentPreview.tsx
+
 'use client';
 
 import { useState, useEffect } from 'react';

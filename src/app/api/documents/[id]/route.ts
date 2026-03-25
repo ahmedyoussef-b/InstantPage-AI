@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stat, readFile, unlink } from 'fs/promises';
 import path from 'path';
-import { findDocumentById } from '@/lib/document-manager/document-utils';
+import { findDocumentById, generateId } from '@/lib/document-manager/document-utils';
 import { ChromaDBManager } from '@/ai/vector/chromadb-manager';
 import { COLLECTION_MAPPING, DOCUMENTS_ROOT } from '@/lib/document-manager/config';
 

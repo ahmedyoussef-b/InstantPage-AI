@@ -1,3 +1,5 @@
+// src/components/document/MetadataPanel.tsx
+
 'use client';
 
 import { useState } from 'react';

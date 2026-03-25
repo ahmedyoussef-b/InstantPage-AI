@@ -1,6 +1,7 @@
 import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
+import { SyncStatusIndicator } from '@/components/document/SyncStatusIndicator';
 
 export const metadata: Metadata = {
   title: 'InstantPage - Rapid Next.js Web Development',
@@ -22,6 +23,8 @@ export default function RootLayout({
       <body className="font-body antialiased selection:bg-accent/30">
         <div className="min-h-screen bg-background">
           {children}
+          <SyncStatusIndicator />
+
         </div>
         <Toaster />
       </body>

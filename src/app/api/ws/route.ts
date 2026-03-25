@@ -1,3 +1,4 @@
+// src/app/api/ws/route.ts
 
 import { NextRequest } from 'next/server';
 import { fileService } from '@/lib/document-manager/file-service';

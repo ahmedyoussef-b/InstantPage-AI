@@ -1,3 +1,5 @@
+// src/components/document/StatisticsPanel.tsx
+
 'use client';
 
 import { Layers, Cpu, Database, TrendingUp } from 'lucide-react';
