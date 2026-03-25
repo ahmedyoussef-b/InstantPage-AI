@@ -67,7 +67,7 @@ export default function DocumentDetailPage() {
     loadDetails();
   }, [loadDetails]);
 
-  // Écouter les mises à jour de synchronisation via WebSocket/SSE
+  // Écouter les mises à jour de synchronisation via SSE
   useEffect(() => {
     if (lastEvent && lastEvent.path === data?.file?.path) {
       if (lastEvent.type === 'sync-complete') {
