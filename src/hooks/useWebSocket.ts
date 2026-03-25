@@ -25,6 +25,7 @@ export function useWebSocket(url?: string) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    // Standardize URL to avoid protocol mismatches (EventSource requires HTTP/HTTPS)
     const endpoint = url || '/api/ws';
     console.log(`[SYNC] Initialisation du canal de synchronisation : ${endpoint}`);
 

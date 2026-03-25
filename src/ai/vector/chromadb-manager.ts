@@ -2,7 +2,7 @@
 // src/ai/vector/chromadb-manager.ts
 import { ChromaClient, Collection, CollectionMetadata } from 'chromadb';
 import { EmbeddingFunction } from 'chromadb';
-import { ChromaCollections, CollectionName, ProfileToCollectionsMap } from './chromadb-schema';
+import { ChromaCollections, CollectionName } from './chromadb-schema';
 import { logger } from '@/lib/logger';
 import { getEmbeddingFunction } from './embeddings';
 
@@ -13,14 +13,11 @@ export class ChromaDBManager {
     private collections: Map<CollectionName, Collection> = new Map();
     private initialized: boolean = false;
 
-    // OPT-5: Circuit-breaker renforcé
-    private cbFailures  = 0;
+    private cbFailures = 0;
     private cbOpenUntil = 0;
     private readonly CB_THRESHOLD = 3;
-    private readonly CB_COOLDOWN  = 30_000;
-
-    // STABILITY: Batch configuration pour éviter OOM (Out Of Memory)
-    private readonly MAX_BATCH_SIZE = 20; 
+    private readonly CB_COOLDOWN = 30_000;
+    private readonly MAX_BATCH_SIZE = 20;
 
     private isCircuitOpen(): boolean {
         if (this.cbFailures < this.CB_THRESHOLD) return false;
@@ -67,22 +64,6 @@ export class ChromaDBManager {
         }
     }
 
-    async initializeAllCollections(): Promise<void> {
-        if (this.initialized) return;
-        try {
-            await this.client.heartbeat();
-            logger.info('✅ ChromaDB connected');
-            for (const key of Object.keys(ChromaCollections)) {
-                await this.getOrCreateCollection(key as CollectionName);
-            }
-            this.initialized = true;
-            logger.info('✨ All collections initialized');
-        } catch (error) {
-            logger.error('ChromaDB initialization failed:', error);
-            throw error;
-        }
-    }
-
     async getOrCreateCollection(name: CollectionName): Promise<Collection> {
         if (this.collections.has(name)) return this.collections.get(name)!;
         const config = (ChromaCollections as any)[name];
@@ -124,81 +105,64 @@ export class ChromaDBManager {
             } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
                 sanitized[key] = value;
             } else if (value !== null && value !== undefined) {
-                sanitized[key] = JSON.stringify(value);
+                sanitized[key] = String(value);
             }
         }
         return sanitized;
     }
 
-    /**
-     * Ajoute des documents avec gestion de lots (Batching) pour éviter les erreurs de mémoire.
-     */
     async addDocuments(collectionName: CollectionName, documents: any[]): Promise<void> {
+        return this.processBatchAction(collectionName, documents, 'add');
+    }
+
+    async upsertDocuments(collectionName: CollectionName, documents: any[]): Promise<void> {
+        return this.processBatchAction(collectionName, documents, 'upsert');
+    }
+
+    private async processBatchAction(collectionName: CollectionName, documents: any[], action: 'add' | 'upsert'): Promise<void> {
         if (!documents.length) return;
-        if (this.isCircuitOpen()) {
-            logger.warn(`[CB] Circuit ouvert — addDocuments ignoré pour ${collectionName}`);
-            return;
-        }
+        if (this.isCircuitOpen()) return;
 
         try {
             const collection = await this.getOrCreateCollection(collectionName);
-            
-            // Traitement par lots
             for (let i = 0; i < documents.length; i += this.MAX_BATCH_SIZE) {
                 const batch = documents.slice(i, i + this.MAX_BATCH_SIZE);
-                logger.info(`[RAG] Ajout du lot ${Math.floor(i/this.MAX_BATCH_SIZE) + 1}/${Math.ceil(documents.length/this.MAX_BATCH_SIZE)} à ${collectionName}`);
-                
-                await collection.add({
+                const payload = {
                     ids: batch.map(d => d.id),
                     documents: batch.map(d => d.content),
                     metadatas: batch.map(d => this.sanitizeMetadata(d.metadata || {}))
-                });
+                };
+                
+                if (action === 'add') await collection.add(payload);
+                else await collection.upsert(payload);
             }
-            
             this.recordSuccess();
-            logger.info(`✅ Importation terminée : ${documents.length} docs dans ${collectionName}`);
         } catch (error) {
             this.recordFailure();
-            logger.error(`❌ Échec addDocuments sur ${collectionName}:`, error);
             throw error;
         }
     }
 
-    /**
-     * Supprime des documents d'une collection
-     */
     async deleteDocuments(collectionName: CollectionName, ids: string[]): Promise<void> {
-        if (this.isCircuitOpen()) {
-            logger.warn(`[CB] Circuit ouvert — deleteDocuments ignoré pour ${collectionName}`);
-            return;
-        }
-
+        if (this.isCircuitOpen()) return;
         try {
             const collection = await this.getOrCreateCollection(collectionName);
             await collection.delete({ ids });
             this.recordSuccess();
-            logger.info(`[RAG] Suppression réussie de ${ids.length} docs dans ${collectionName}`);
         } catch (error) {
             this.recordFailure();
-            logger.error(`❌ Échec deleteDocuments sur ${collectionName}:`, error);
             throw error;
         }
     }
 
     async search(collectionName: CollectionName, query: string, options: any = {}): Promise<any> {
         if (this.isCircuitOpen()) return { documents: [], metadatas: [], distances: [], ids: [] };
-
         try {
             const collection = await this.getOrCreateCollection(collectionName);
-            let where = options.where;
-            if (where && Object.keys(where).length > 1) {
-                where = { "$and": Object.entries(where).map(([key, value]) => ({ [key]: value })) };
-            }
-
             const results = await collection.query({
                 queryTexts: [query],
                 nResults: options.nResults || 10,
-                where: where
+                where: options.where
             });
             this.recordSuccess();
             return {
@@ -209,7 +173,6 @@ export class ChromaDBManager {
             };
         } catch (error) {
             this.recordFailure();
-            logger.error(`Search failed for ${collectionName}:`, error);
             return { documents: [], metadatas: [], distances: [], ids: [] };
         }
     }
@@ -218,19 +181,14 @@ export class ChromaDBManager {
         const stats = [];
         for (const key of Object.keys(ChromaCollections)) {
             try {
-                const s = await this.getCollectionStats(key as CollectionName);
-                stats.push(s);
+                const collection = await this.getOrCreateCollection(key as CollectionName);
+                const count = await collection.count();
+                const config = (ChromaCollections as any)[key];
+                stats.push({ count, id: key, name: config.name, description: config.description });
             } catch (e) {
-                stats.push({ name: key, error: "Indisponible" });
+                stats.push({ id: key, error: "Indisponible" });
             }
         }
         return stats;
-    }
-
-    async getCollectionStats(collectionName: CollectionName): Promise<any> {
-        const collection = await this.getOrCreateCollection(collectionName);
-        const count = await collection.count();
-        const config = (ChromaCollections as any)[collectionName];
-        return { count, id: collectionName, name: config.name, description: config.description };
     }
 }
