@@ -1,6 +1,6 @@
 /**
  * @fileOverview DocumentProcessor - Service d'orchestration du traitement documentaire.
- * Gère l'extraction, le smart-chunking et l'enrichissement des métadonnées.
+ * Gère l'extraction (OCR pour images), le smart-chunking et l'enrichissement des métadonnées.
  */
 
 import { readFile } from 'fs/promises';
@@ -20,37 +20,42 @@ export class DocumentProcessor {
     this.onProgress = onProgress;
   }
   
+  /**
+   * Processus principal : du fichier brut à l'index vectoriel.
+   */
   async processDocument(filePath: string, customCollection?: string): Promise<void> {
     const fileName = path.basename(filePath);
     const extension = path.extname(filePath).toLowerCase();
     
-    this.onProgress?.('Analyse du document', 10);
+    this.onProgress?.('Analyse structurelle', 10);
     
     let content = '';
     let metadata: Record<string, any> = {};
     const isImage = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff'].includes(extension);
     
+    // 1. Extraction du contenu technique
     if (isImage) {
-      this.onProgress?.('OCR en cours (image)', 20);
+      this.onProgress?.('OCR en cours (Prétraitement industriel)', 20);
       const ocrResult = await this.ocrService.extractTextFromImage(filePath);
       content = ocrResult.text;
       metadata = await this.ocrService.extractMetadata(filePath);
       metadata.ocrConfidence = ocrResult.confidence;
       metadata.ocrLanguage = ocrResult.language;
-      metadata.ocrTime = ocrResult.processingTime;
     } else {
-      this.onProgress?.('Extraction du texte', 20);
+      this.onProgress?.('Lecture du document texte', 20);
       content = await readFile(filePath, 'utf-8');
     }
     
-    if (!content.trim()) {
-      throw new Error('Contenu textuel vide détecté.');
+    if (!content || !content.trim()) {
+      throw new Error('Le document ne contient aucun texte exploitable.');
     }
 
-    this.onProgress?.('Découpage sémantique', 40);
+    // 2. Découpage sémantique (Smart Chunking avec Overlap)
+    this.onProgress?.('Découpage sémantique (Chunking)', 40);
     const chunks = this.smartChunking(content);
     
-    this.onProgress?.('Génération d\'embeddings', 60);
+    // 3. Enrichissement des métadonnées contextuelles
+    this.onProgress?.('Enrichissement des métadonnées', 60);
     const collection = (customCollection || this.getCollectionFromPath(filePath)) as CollectionName;
     const documentId = this.generateDocumentId(filePath);
     
@@ -59,18 +64,16 @@ export class DocumentProcessor {
       titre: fileName,
       type: this.determineDocumentType(filePath, content),
       categorie: this.determineCategory(filePath),
-      sous_categorie: this.determineSubcategory(filePath),
       equipement: this.extractEquipement(fileName, content),
       zone: this.extractZone(filePath),
-      pupitre: this.extractPupitre(filePath),
-      profils_cibles: this.determineTargetProfiles(fileName, content),
       tags: this.generateTags(fileName, content, extension),
       source: filePath,
       version: '1.0',
       ...metadata
     });
     
-    this.onProgress?.('Indexation ChromaDB', 80);
+    // 4. Indexation vectorielle
+    this.onProgress?.('Génération d\'embeddings et Indexation', 80);
     
     const documentsToIndex = chunks.map((chunk, index) => ({
       id: `${documentId}_chunk_${index}`,
@@ -84,22 +87,24 @@ export class DocumentProcessor {
     }));
 
     await this.chromaManager.addDocuments(collection, documentsToIndex);
-    this.onProgress?.('Terminé', 100);
+    this.onProgress?.('Indexation terminée', 100);
   }
   
+  /**
+   * Découpe le texte en segments de 1000 caractères avec un recouvrement de 200.
+   */
   private smartChunking(content: string): string[] {
     const chunkSize = 1000;
     const overlap = 200;
     const chunks: string[] = [];
     
-    // Découpage par sections (Titres Markdown)
+    // Priorité au découpage par sections Markdown
     const sections = content.split(/\n(?=#+\s)/);
     
     for (const section of sections) {
       if (section.length <= chunkSize) {
         chunks.push(section);
       } else {
-        // Découpage glissant avec overlap
         let start = 0;
         while (start < section.length) {
           const end = Math.min(start + chunkSize, section.length);
@@ -115,9 +120,8 @@ export class DocumentProcessor {
   
   private determineDocumentType(filePath: string, content: string): string {
     const fileName = path.basename(filePath).toLowerCase();
-    const contentLower = content.toLowerCase();
-    if (fileName.includes('demarrage') || contentLower.includes('démarrage')) return 'procedure_demarrage';
-    if (fileName.includes('arret') || contentLower.includes('arrêt')) return 'procedure_arret';
+    if (fileName.includes('demarrage')) return 'procedure_demarrage';
+    if (fileName.includes('arret')) return 'procedure_arret';
     if (fileName.includes('alarme')) return 'consigne_alarme';
     return 'document_technique';
   }
@@ -127,16 +131,11 @@ export class DocumentProcessor {
     return parts[parts.length - 2] || 'general';
   }
   
-  private determineSubcategory(filePath: string): string {
-    return 'exploitation';
-  }
-  
   private extractEquipement(fileName: string, content: string): string {
     const text = (fileName + ' ' + content).toUpperCase();
     if (text.includes('TG1')) return 'TG1';
     if (text.includes('TG2')) return 'TG2';
     if (text.includes('TV')) return 'TV';
-    if (text.includes('CHAUDIERE')) return 'CHAUDIERE';
     return 'GENERAL';
   }
   
@@ -146,23 +145,9 @@ export class DocumentProcessor {
     return 'Centrale';
   }
   
-  private extractPupitre(filePath: string): string {
-    if (filePath.includes('TG1')) return 'Pupitre TG1';
-    if (filePath.includes('TV')) return 'Pupitre TV';
-    return 'Salle de Contrôle';
-  }
-  
-  private determineTargetProfiles(fileName: string, content: string): string[] {
-    const text = (fileName + ' ' + content).toLowerCase();
-    const profiles = [];
-    if (text.includes('chef')) profiles.push('chef_quart');
-    if (text.includes('maintenance')) profiles.push('maintenance');
-    return profiles.length > 0 ? profiles : ['operateur'];
-  }
-  
   private generateTags(fileName: string, content: string, extension: string): string[] {
     const tags = [extension.substring(1)];
-    const keywords = ['pression', 'temperature', 'vibration', 'securite', 'maintenance'];
+    const keywords = ['pression', 'temperature', 'vibration', 'securite'];
     const text = (fileName + ' ' + content).toLowerCase();
     keywords.forEach(k => { if (text.includes(k)) tags.push(k); });
     return tags;
@@ -175,7 +160,6 @@ export class DocumentProcessor {
   }
   
   private generateDocumentId(filePath: string): string {
-    const relative = path.relative(process.cwd(), filePath);
-    return relative.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    return filePath.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
   }
 }
