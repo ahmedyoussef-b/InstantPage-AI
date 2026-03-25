@@ -1,12 +1,12 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { ChromaDBManager } from '@/ai/vector/chromadb-manager';
 import { createStandardMetadata, type CollectionName } from '@/ai/vector/chromadb-schema';
 import path from 'path';
-import { createWorker } from 'tesseract.js';
+import { OCRService } from '@/lib/document-manager/ocr-service';
 
 /**
  * Pipeline de traitement avancé des documents (OCR + Chunking + Embedding)
+ * Intègre désormais l'OCRService pour un traitement d'image professionnel.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -17,24 +17,32 @@ export async function POST(req: NextRequest) {
     }
 
     let extractedText = content || '';
+    let imageMeta: any = {};
 
     // 1. ÉTAPE OCR (si image)
     if (isImage) {
       console.log(`[PIPELINE][OCR] Traitement de l'image: ${path.basename(filePath)}`);
       try {
-        const worker = await createWorker('fra');
-        const { data: { text } } = await worker.recognize(filePath);
-        extractedText = text;
-        await worker.terminate();
-        console.log(`[PIPELINE][OCR] Texte extrait (${extractedText.length} chars)`);
+        const ocrService = OCRService.getInstance();
+        
+        // Extraction du texte et des métadonnées EXIF en parallèle
+        const [ocrResult, metadata] = await Promise.all([
+          ocrService.extractTextFromImage(filePath),
+          ocrService.extractMetadata(filePath)
+        ]);
+        
+        extractedText = ocrResult.text;
+        imageMeta = metadata;
+        
+        console.log(`[PIPELINE][OCR] Succès: ${extractedText.length} caractères extraits (Confiance: ${Math.round(ocrResult.confidence * 100)}%)`);
       } catch (ocrError) {
         console.error('[PIPELINE][OCR] Échec extraction:', ocrError);
-        // On continue avec les métadonnées si l'OCR échoue
+        // On continue avec le texte vide ou partiel pour indexer au moins les métadonnées de fichier
       }
     }
 
     if (!extractedText.trim() && !isImage) {
-      return NextResponse.json({ error: 'Contenu vide et OCR non applicable' }, { status: 400 });
+      return NextResponse.json({ error: 'Contenu textuel vide détecté.' }, { status: 400 });
     }
 
     // 2. ÉTAPE CHUNKING (1000 chars, overlap 200)
@@ -47,7 +55,7 @@ export async function POST(req: NextRequest) {
     
     const baseId = filePath.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
     
-    // Détection enrichie des métadonnées
+    // Détection enrichie des métadonnées industrielles
     const metadata = createStandardMetadata({
       id: baseId,
       titre: path.basename(filePath),
@@ -56,7 +64,9 @@ export async function POST(req: NextRequest) {
       source: filePath,
       equipement: detectEquipment(extractedText, filePath),
       tags: [...detectTags(extractedText), path.extname(filePath).substring(1)],
-      version: '1.0'
+      version: '1.0',
+      // Fusionner avec les métadonnées d'image si présentes
+      ...imageMeta
     });
 
     // Préparation des documents pour ChromaDB (un doc par chunk)
@@ -77,19 +87,19 @@ export async function POST(req: NextRequest) {
       success: true, 
       documentId: baseId,
       chunks: chunks.length,
-      message: 'Pipeline de traitement terminé avec succès.'
+      message: 'Pipeline de vectorisation terminé avec succès.'
     });
   } catch (error: any) {
-    console.error('[PIPELINE][ERROR] Échec critique:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('[PIPELINE][ERROR] Échec critique du traitement:', error);
+    return NextResponse.json({ error: error.message || String(error) }, { status: 500 });
   }
 }
 
 /**
- * Découpe le texte avec chevauchement pour préserver le contexte
+ * Découpe le texte avec chevauchement pour préserver le contexte sémantique
  */
 function chunkTextWithOverlap(text: string, size: number, overlap: number): string[] {
-  if (!text) return [];
+  if (!text || text.length === 0) return ["Document sans contenu textuel identifiable."];
   if (text.length <= size) return [text];
 
   const chunks: string[] = [];
@@ -107,7 +117,7 @@ function chunkTextWithOverlap(text: string, size: number, overlap: number): stri
 }
 
 /**
- * Heuristique simple de détection d'équipement
+ * Heuristique de détection d'équipement basée sur le contenu technique
  */
 function detectEquipment(text: string, filePath: string): string {
   const content = (text + ' ' + filePath).toUpperCase();
@@ -119,16 +129,16 @@ function detectEquipment(text: string, filePath: string): string {
 }
 
 /**
- * Extraction de tags techniques
+ * Extraction de tags techniques par analyse lexicale
  */
 function detectTags(text: string): string[] {
   const tags: string[] = [];
   const lower = text.toLowerCase();
   if (lower.includes('pression')) tags.push('pression');
-  if (lower.includes('température')) tags.push('temperature');
+  if (lower.includes('température') || lower.includes('temperature')) tags.push('temperature');
   if (lower.includes('vibration')) tags.push('vibration');
   if (lower.includes('maintenance')) tags.push('maintenance');
   if (lower.includes('alarme')) tags.push('alarme');
-  if (lower.includes('sécurité')) tags.push('securite');
+  if (lower.includes('sécurité') || lower.includes('securite')) tags.push('securite');
   return Array.from(new Set(tags));
 }
