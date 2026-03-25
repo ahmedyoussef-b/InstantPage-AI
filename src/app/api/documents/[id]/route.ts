@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { stat, unlink } from 'fs/promises';
+import { stat, readFile, unlink } from 'fs/promises';
 import path from 'path';
 import { findDocumentById } from '@/lib/document-manager/document-utils';
 import { ChromaDBManager } from '@/ai/vector/chromadb-manager';
@@ -51,6 +51,12 @@ export async function GET(
       console.warn(`[API][GET] Erreur ChromaDB pour ${id}:`, e);
     }
 
+    // Lire le contenu si c'est un fichier texte
+    let rawContent = "Fichier binaire.";
+    if (['.txt', '.md', '.json'].includes(ext)) {
+      rawContent = await readFile(documentPath, 'utf-8');
+    }
+
     return NextResponse.json({
       id: id,
       name: fileName,
@@ -58,8 +64,8 @@ export async function GET(
       type: ext.substring(1).toUpperCase(),
       size: stats.size,
       modifiedAt: stats.mtime.toISOString(),
-      content: chromaData?.content || "Fichier physique lu. Indexation vectorielle en attente.",
-      extractedText: chromaData?.content || "",
+      content: rawContent,
+      extractedText: chromaData?.content || rawContent.substring(0, 5000),
       ocrConfidence: chromaData?.metadata?.ocrConfidence,
       metadata: chromaData?.metadata || {},
       chunks: {
@@ -119,6 +125,7 @@ export async function DELETE(
     for (const coll of stats) {
       try {
         await manager.deleteDocuments(coll.id as any, [id]);
+        // Tenter de supprimer les chunks potentiels
         const chunks = Array.from({ length: 50 }, (_, i) => `${id}_chunk_${i}`);
         await manager.deleteDocuments(coll.id as any, chunks);
       } catch (e) {}

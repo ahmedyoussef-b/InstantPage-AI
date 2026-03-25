@@ -17,7 +17,9 @@ export async function PUT(
     const { text } = await req.json();
     const documentPath = await findDocumentById(id);
     
-    if (!documentPath) throw new Error("Document introuvable.");
+    if (!documentPath) {
+      return NextResponse.json({ error: "Document introuvable." }, { status: 404 });
+    }
 
     const relative = path.relative(DOCUMENTS_ROOT, documentPath);
     const folder = relative.split(path.sep)[0];
@@ -26,15 +28,23 @@ export async function PUT(
     const manager = ChromaDBManager.getInstance();
     const fileName = path.basename(documentPath);
     
-    // Récupérer les métadonnées existantes
-    const current = await manager.search(collectionName, fileName, { nResults: 1, where: { id: id } });
-    const metadata = current.metadatas[0] || {};
+    // Récupérer les métadonnées existantes pour ne pas les perdre
+    const searchRes = await manager.search(collectionName, fileName, { 
+      nResults: 1, 
+      where: { id: id } 
+    });
+    
+    const metadata = searchRes.metadatas[0] || {};
 
     // Mettre à jour le document principal dans ChromaDB
     await manager.addDocuments(collectionName, [{
       id: id,
       content: text,
-      metadata: { ...metadata, date_modification: new Date().toISOString() }
+      metadata: { 
+        ...metadata, 
+        date_modification: new Date().toISOString(),
+        manual_correction: 'true'
+      }
     }]);
 
     return NextResponse.json({ success: true, message: "Texte vectoriel mis à jour." });

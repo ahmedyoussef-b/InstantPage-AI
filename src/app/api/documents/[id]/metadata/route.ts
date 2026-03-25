@@ -17,7 +17,9 @@ export async function PUT(
     const { metadata } = await req.json();
     const documentPath = await findDocumentById(id);
     
-    if (!documentPath) throw new Error("Document introuvable.");
+    if (!documentPath) {
+      return NextResponse.json({ error: "Document introuvable." }, { status: 404 });
+    }
 
     const relative = path.relative(DOCUMENTS_ROOT, documentPath);
     const folder = relative.split(path.sep)[0];
@@ -27,14 +29,19 @@ export async function PUT(
     const fileName = path.basename(documentPath);
     
     // Récupérer le contenu existant
-    const current = await manager.search(collectionName, fileName, { nResults: 1, where: { id: id } });
+    const current = await manager.search(collectionName, fileName, { 
+      nResults: 1, 
+      where: { id: id } 
+    });
     const content = current.documents[0] || "";
 
     // Nettoyer les métadonnées pour ChromaDB
-    const sanitizedMetadata: Record<string, string> = {};
+    const sanitizedMetadata: Record<string, string | number | boolean> = {};
     Object.entries(metadata).forEach(([key, value]) => {
       if (Array.isArray(value)) {
         sanitizedMetadata[key] = value.join(', ');
+      } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        sanitizedMetadata[key] = value;
       } else if (value !== null && value !== undefined) {
         sanitizedMetadata[key] = String(value);
       }
@@ -43,7 +50,11 @@ export async function PUT(
     await manager.addDocuments(collectionName, [{
       id: id,
       content,
-      metadata: { ...sanitizedMetadata, date_modification: new Date().toISOString() }
+      metadata: { 
+        ...sanitizedMetadata, 
+        date_modification: new Date().toISOString(),
+        id: id // S'assurer que l'ID est préservé dans les métadonnées
+      }
     }]);
 
     return NextResponse.json({ success: true, message: "Métadonnées synchronisées." });
