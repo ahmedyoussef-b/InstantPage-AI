@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FileTree, type FileNode } from './FileTree';
 import { UploadZone } from './UploadZone';
 import { SyncStatus, type SyncEvent } from './SyncStatus';
@@ -46,7 +46,8 @@ export default function DocumentManager() {
         path: lastEvent.path,
         timestamp: lastEvent.timestamp,
         error: lastEvent.error,
-        success: lastEvent.success
+        success: lastEvent.success,
+        stage: (lastEvent as any).stage
       }, ...prev].slice(0, 50));
 
       if (lastEvent.type === 'file-changed' || lastEvent.type === 'CONNECTED') {
@@ -58,6 +59,26 @@ export default function DocumentManager() {
   useEffect(() => {
     loadTree();
   }, [loadTree]);
+
+  // Génération des chemins disponibles pour le sélecteur d'upload
+  const availablePaths = useMemo(() => {
+    const paths: Array<{ label: string; value: string }> = [];
+    
+    const extractPaths = (nodes: FileNode[]) => {
+      nodes.forEach(node => {
+        if (node.type === 'directory') {
+          paths.push({
+            label: node.name.replace(/_/g, ' '),
+            value: node.path
+          });
+          if (node.children) extractPaths(node.children);
+        }
+      });
+    };
+    
+    extractPaths(tree);
+    return paths.sort((a, b) => a.label.localeCompare(b.label));
+  }, [tree]);
 
   const handleFileUpload = async (files: File[], targetPath: string) => {
     const parts = targetPath.split(/[\\/]centrale_documents[\\/]/);
@@ -152,6 +173,11 @@ export default function DocumentManager() {
     }
   };
 
+  // Synchroniser la sélection du Tree vers la destination d'upload
+  const currentUploadPath = selectedNode?.type === 'directory' 
+    ? selectedNode.path 
+    : (selectedNode?.path ? selectedNode.path.split(/[\\/]/).slice(0, -1).join('/') : '');
+
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-12rem)] bg-[#171717] rounded-[2rem] border border-white/5 overflow-hidden shadow-2xl">
       <div className="lg:w-96 border-r border-white/5 bg-black/20 flex flex-col min-h-0">
@@ -228,8 +254,12 @@ export default function DocumentManager() {
 
             <UploadZone 
               onUpload={handleFileUpload}
-              currentPath={selectedNode?.type === 'directory' ? selectedNode.path : (selectedNode?.path ? selectedNode.path.split(/[\\/]/).slice(0, -1).join('/') : '')}
-              currentDirName={selectedNode?.type === 'directory' ? selectedNode.name : "Dossier parent"}
+              currentPath={currentUploadPath}
+              onPathChange={(path) => {
+                const node = findNodeByPath(tree, path);
+                if (node) setSelectedNode(node);
+              }}
+              availablePaths={availablePaths}
             />
             
             <div className="px-6">
@@ -242,7 +272,7 @@ export default function DocumentManager() {
                       </div>
                       <p className="text-sm font-black text-blue-400 uppercase tracking-[0.2em] mb-2">Sélection requise</p>
                       <p className="text-xs text-gray-500 font-medium max-w-sm mx-auto leading-relaxed">
-                        Sélectionnez un dossier dans l'architecture pour y assigner de nouveaux documents techniques.
+                        Sélectionnez un dossier dans l'architecture ou utilisez le menu de destination ci-dessus.
                       </p>
                     </div>
                   ) : (
@@ -271,6 +301,17 @@ export default function DocumentManager() {
       </div>
     </div>
   );
+}
+
+function findNodeByPath(nodes: FileNode[], path: string): FileNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    if (node.children) {
+      const found = findNodeByPath(node.children, path);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 function getCollectionFromPath(filePath: string): string {
