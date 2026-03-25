@@ -29,7 +29,7 @@ export async function POST(
       ...metadata
     });
     
-    // On utilise upsert pour mettre à jour ou créer le vecteur principal
+    // On utilise upsertDocuments pour mettre à jour ou créer le vecteur principal
     await manager.upsertDocuments(collectionName, [{
       id: id,
       content: text,

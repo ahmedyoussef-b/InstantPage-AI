@@ -1,7 +1,7 @@
 
 /**
- * @fileOverview API Route /api/documents/[id] - GET & DELETE.
- * Orchestre la récupération des données physiques et vectorielles (Next.js 15 Ready).
+ * @fileOverview API Route /api/documents/[id] - GET & DELETE optimisé.
+ * Orchestre la récupération et la suppression propre des données (Next.js 15 Ready).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -27,12 +27,10 @@ export async function GET(
     const fileName = path.basename(documentPath);
     const ext = path.extname(documentPath).toLowerCase();
     
-    // Déterminer la collection pour la recherche vectorielle
     const relative = path.relative(DOCUMENTS_ROOT, documentPath);
     const folder = relative.split(path.sep)[0];
     const collectionName = (COLLECTION_MAPPING[folder] || 'DOCUMENTS_GENERAUX') as any;
 
-    // Récupérer les données depuis ChromaDB
     const manager = ChromaDBManager.getInstance();
     let chromaData: any = null;
     
@@ -52,7 +50,6 @@ export async function GET(
       console.warn(`[API][GET] Erreur ChromaDB pour ${id}:`, e);
     }
 
-    // Lire le contenu si c'est un fichier texte
     let rawContent = "Fichier binaire.";
     if (['.txt', '.md', '.json', '.ts', '.tsx'].includes(ext)) {
       rawContent = await readFile(documentPath, 'utf-8');
@@ -116,19 +113,29 @@ export async function DELETE(
     const { id } = await params;
     const documentPath = await findDocumentById(id);
     
+    // 1. Suppression physique
     if (documentPath) {
-      await unlink(documentPath);
+      await unlink(documentPath).catch(e => console.warn(`[API][DELETE] Fichier déjà absent: ${documentPath}`));
     }
     
+    // 2. Suppression vectorielle (Document principal + chunks)
     const manager = ChromaDBManager.getInstance();
     const stats = await manager.getAllCollectionsStats();
     
+    // On parcourt toutes les collections pour être sûr de tout purger
     for (const coll of stats) {
       try {
-        await manager.deleteDocuments(coll.id as any, [id]);
-        const chunks = Array.from({ length: 50 }, (_, i) => `${id}_chunk_${i}`);
-        await manager.deleteDocuments(coll.id as any, chunks);
-      } catch (e) {}
+        // Liste des IDs potentiels à supprimer (ID principal + chunks probables)
+        // Note: Dans une version plus poussée, on listerait les IDs via metadata
+        const idsToDelete = [id];
+        for (let i = 0; i < 100; i++) {
+          idsToDelete.push(`${id}_chunk_${i}`);
+        }
+        
+        await manager.deleteDocuments(coll.id as any, idsToDelete);
+      } catch (e) {
+        // Ignorer les erreurs si la collection ne contient pas l'ID
+      }
     }
     
     return NextResponse.json({ success: true, message: "Document et vecteurs purgés." });
