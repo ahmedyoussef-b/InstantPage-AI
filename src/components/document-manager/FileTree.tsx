@@ -5,6 +5,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -16,7 +17,8 @@ import {
   Check, 
   X,
   FileJson,
-  FileCode
+  FileCode,
+  Info
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -54,6 +56,7 @@ export function FileTree({
   onCreateFolder,
   level = 0 
 }: FileTreeProps) {
+  const router = useRouter();
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editValue, setEditedValue] = useState('');
   const [creatingInPath, setCreatingInPath] = useState<string | null>(null);
@@ -67,7 +70,6 @@ export function FileTree({
   };
 
   const isRootFolder = (path: string) => {
-    // Vérifie si c'est un dossier de premier niveau (Collection)
     const parts = path.split(/[\\/]/);
     return parts[parts.length - 2] === 'centrale_documents';
   };
@@ -85,7 +87,7 @@ export function FileTree({
   };
 
   const handleStartCreate = (node: FileNode) => {
-    onToggleExpand(node.path); // S'assurer que le dossier est ouvert
+    onToggleExpand(node.path);
     setCreatingInPath(node.path);
     setNewValue('');
   };
@@ -95,6 +97,12 @@ export function FileTree({
       await onCreateFolder(creatingInPath, newValue.trim());
     }
     setCreatingInPath(null);
+  };
+
+  const goToDetail = (e: React.MouseEvent, node: FileNode) => {
+    e.stopPropagation();
+    const encodedPath = encodeURIComponent(node.path);
+    router.push(`/admin/documents/${encodedPath}`);
   };
 
   return (
@@ -162,6 +170,15 @@ export function FileTree({
               
               {!isEditing && (
                 <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-all">
+                  {!isDirectory && (
+                    <button
+                      onClick={(e) => goToDetail(e, node)}
+                      className="p-1.5 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors"
+                      title="Inspecter le document (RAG/OCR)"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {isDirectory && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleStartCreate(node); }}
