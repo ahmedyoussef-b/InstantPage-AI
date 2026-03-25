@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { Upload, X, FileText, CheckCircle, AlertCircle, Loader2, FolderOpen, Target, ChevronRight } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Upload, X, FileText, CheckCircle, AlertCircle, FolderOpen, Target, ChevronRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 
@@ -140,7 +140,7 @@ export function UploadZone({ onUpload, currentPath, onPathChange, availablePaths
           "border-2 border-dashed rounded-[2rem] p-12 text-center transition-all duration-500 relative overflow-hidden",
           !hasSelectedDir ? "opacity-40 grayscale cursor-not-allowed border-white/5" : (
             isDragging 
-              ? "border-blue-500 bg-blue-500/5 shadow-2xl shadow-blue-500/10 scale-[1.01]" 
+              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-2xl shadow-blue-500/10 scale-[1.01]" 
               : "border-white/5 bg-white/5 hover:border-white/10"
           )
         )}
@@ -179,7 +179,7 @@ export function UploadZone({ onUpload, currentPath, onPathChange, availablePaths
         </label>
       </div>
       
-      {/* Journal des Uploads Actifs */}
+      {/* Liste des uploads */}
       {uploads.length > 0 && (
         <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-500">
           <div className="flex items-center gap-2 ml-1 mb-4">
@@ -188,43 +188,30 @@ export function UploadZone({ onUpload, currentPath, onPathChange, availablePaths
           </div>
           
           {uploads.map(upload => (
-            <div key={upload.id} className="flex items-center justify-between p-4 bg-black/20 border border-white/5 rounded-2xl shadow-xl hover:bg-white/5 transition-all group">
-              <div className="flex items-center gap-4">
-                <div className="p-2.5 bg-purple-600/20 rounded-xl">
-                  <FileText className="w-4 h-4 text-purple-400" />
-                </div>
+            <div key={upload.id} className="flex items-center justify-between p-4 bg-black/20 border border-white/5 rounded-2xl shadow-xl hover:bg-white/5 transition-all">
+              <div className="flex items-center gap-3">
+                <FileText className="w-4 h-4 text-gray-500" />
                 <div>
-                  <p className="text-[11px] font-black text-white truncate max-w-[250px] uppercase tracking-tight">{upload.name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[9px] font-bold text-gray-600 uppercase">{formatSize(upload.size)}</span>
-                    <span className="text-[9px] text-gray-700">•</span>
-                    <span className="text-[9px] font-black text-blue-500/60 uppercase tracking-tighter truncate max-w-[150px]">
-                      Vers: {upload.targetPath?.split(/[\\/]/).pop()?.replace(/_/g, ' ')}
-                    </span>
-                  </div>
+                  <p className="text-[11px] font-black text-white truncate max-w-[200px] uppercase tracking-tight">{upload.name}</p>
+                  <p className="text-[9px] font-bold text-gray-600 uppercase">
+                    Vers: {upload.targetPath?.split(/[\\/]/).pop()}
+                  </p>
                 </div>
               </div>
               
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 {upload.status === 'uploading' && (
-                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 rounded-lg">
-                    <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
-                    <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Processing</span>
-                  </div>
+                  <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
                 )}
                 {upload.status === 'success' && (
-                  <div className="p-1.5 bg-green-500/20 rounded-full border border-green-500/30">
-                    <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-                  </div>
+                  <CheckCircle className="w-4 h-4 text-green-500" />
                 )}
                 {upload.status === 'error' && (
-                  <div className="p-1.5 bg-red-500/20 rounded-full border border-red-500/30" title={upload.error}>
-                    <AlertCircle className="w-3.5 h-3.5 text-red-500" />
-                  </div>
+                  <AlertCircle className="w-4 h-4 text-red-500" title={upload.error} />
                 )}
                 <button
                   onClick={() => setUploads(prev => prev.filter(u => u.id !== upload.id))}
-                  className="p-2 hover:bg-white/10 rounded-xl text-gray-600 hover:text-white transition-colors"
+                  className="p-1 hover:bg-white/10 rounded-lg text-gray-600 hover:text-white transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>

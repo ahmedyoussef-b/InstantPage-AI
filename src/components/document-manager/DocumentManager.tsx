@@ -60,10 +60,8 @@ export default function DocumentManager() {
     loadTree();
   }, [loadTree]);
 
-  // Génération des chemins disponibles pour le sélecteur d'upload
   const availablePaths = useMemo(() => {
     const paths: Array<{ label: string; value: string }> = [];
-    
     const extractPaths = (nodes: FileNode[]) => {
       nodes.forEach(node => {
         if (node.type === 'directory') {
@@ -75,7 +73,6 @@ export default function DocumentManager() {
         }
       });
     };
-    
     extractPaths(tree);
     return paths.sort((a, b) => a.label.localeCompare(b.label));
   }, [tree]);
@@ -96,7 +93,6 @@ export default function DocumentManager() {
         });
         
         if (!response.ok) throw new Error('Échec du transfert.');
-        
         toast({
           title: "Document transféré",
           description: `${file.name} est en cours d'indexation.`,
@@ -119,12 +115,7 @@ export default function DocumentManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path, newName })
       });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Rename failed');
-      }
-      
+      if (!response.ok) throw new Error('Rename failed');
       toast({ title: "Élément renommé", description: `Nouveau nom: ${newName}` });
       loadTree(true);
     } catch (error: any) {
@@ -139,9 +130,7 @@ export default function DocumentManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parentPath, name })
       });
-      
       if (!response.ok) throw new Error('Mkdir failed');
-      
       toast({ title: "Dossier créé", description: name });
       loadTree(true);
     } catch (error) {
@@ -151,29 +140,24 @@ export default function DocumentManager() {
 
   const handleDelete = async (node: FileNode) => {
     if (!confirm(`Voulez-vous purger définitivement ${node.name} ?`)) return;
-    
     try {
       const response = await fetch('/api/documents/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentId: node.path.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
-          collection: getCollectionFromPath(node.path),
+          collection: 'DOCUMENTS_GENERAUX', // Fallback, le processeur gère par path
           filePath: node.path
         })
       });
-      
       if (!response.ok) throw new Error('Delete failed');
-      
       toast({ title: "Élément purgé", description: "Suppression effectuée." });
-      if (selectedNode?.path === node.path) setSelectedNode(null);
       loadTree(true);
     } catch (error) {
       toast({ variant: "destructive", title: "Erreur Purge", description: "Impossible de supprimer l'élément." });
     }
   };
 
-  // Synchroniser la sélection du Tree vers la destination d'upload
   const currentUploadPath = selectedNode?.type === 'directory' 
     ? selectedNode.path 
     : (selectedNode?.path ? selectedNode.path.split(/[\\/]/).slice(0, -1).join('/') : '');
@@ -193,7 +177,6 @@ export default function DocumentManager() {
               </div>
             </div>
           </div>
-          
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
             <Input 
@@ -204,7 +187,6 @@ export default function DocumentManager() {
             />
           </div>
         </div>
-        
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar min-h-0">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-40 text-gray-600 gap-4">
@@ -296,7 +278,6 @@ export default function DocumentManager() {
             </div>
           </div>
         </div>
-        
         <SyncStatus events={syncEvents} isConnected={isConnected} />
       </div>
     </div>
@@ -312,29 +293,4 @@ function findNodeByPath(nodes: FileNode[], path: string): FileNode | null {
     }
   }
   return null;
-}
-
-function getCollectionFromPath(filePath: string): string {
-  const parts = filePath.split(/[\\/]/);
-  const rootIndex = parts.indexOf('centrale_documents');
-  if (rootIndex !== -1 && parts[rootIndex + 1]) {
-    const folder = parts[rootIndex + 1];
-    const mapping: Record<string, string> = {
-      '01_DOCUMENTS_GENERAUX': 'DOCUMENTS_GENERAUX',
-      '02_EQUIPEMENTS_PRINCIPAUX': 'EQUIPEMENTS_PRINCIPAUX',
-      '03_SYSTEMES_AUXILIAIRES': 'SYSTEMES_AUXILIAIRES',
-      '04_PROCEDURES': 'PROCEDURES_EXPLOITATION',
-      '05_CONSIGNES_ET_SEUILS': 'CONSIGNES_ET_SEUILS',
-      '06_MAINTENANCE': 'MAINTENANCE',
-      '07_HISTORIQUE': 'HISTORIQUE',
-      '08_SECURITE': 'SECURITE',
-      '09_ANALYSE_PERFORMANCE': 'ANALYSE_PERFORMANCE',
-      '10_FORMATION': 'FORMATION',
-      '11_SALLE_CONTROLE_ET_CONDUITE': 'SALLE_CONTROLE_CONDUITE',
-      '12_GESTION_EQUIPES_ET_HUMAIN': 'GESTION_EQUIPES_HUMAIN',
-      '13_SUPERVISION_GLOBALE': 'SUPERVISION_GLOBALE'
-    };
-    return mapping[folder] || 'DOCUMENTS_GENERAUX';
-  }
-  return 'DOCUMENTS_GENERAUX';
 }
