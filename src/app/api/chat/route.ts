@@ -1,5 +1,5 @@
-﻿// src/app/api/chat/route.ts
-// Version modifiée pour utiliser le provider hybride
+// src/app/api/chat/route.ts
+// Point d'entrée Chat - Support des procédures interactives
 
 import { NextRequest, NextResponse } from 'next/server';
 import { callHybridProvider } from '@/ai/providers/hybrid-provider';
@@ -9,59 +9,31 @@ export async function POST(request: NextRequest) {
   
   try {
     const body = await request.json();
-    
-    // Extraire la question (supporte plusieurs formats)
     const query = body.prompt || body.text || body.message || body.query;
     
     if (!query || typeof query !== 'string') {
-      return NextResponse.json(
-        { 
-          error: 'Requête invalide. La requête doit contenir "prompt", "text", "message" ou "query"',
-          answer: "Veuillez poser une question valide."
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Requête invalide' }, { status: 400 });
     }
     
-    console.log(`[API] Requête reçue: "${query.substring(0, 100)}${query.length > 100 ? '...' : ''}"`);
-    
-    // Appel au provider hybride (RAG + Fallback)
+    // Appel au provider hybride (RAG + Détection de Procédure)
     const result = await callHybridProvider(query);
     
-    const processingTime = Date.now() - startTime;
-    console.log(`[API] Réponse en ${processingTime}ms (source: ${result.source}, confidence: ${result.confidence})`);
-    
-    // Retourner la réponse avec métadonnées
     return NextResponse.json({
       answer: result.answer,
       source: result.source,
       confidence: result.confidence,
       sources: result.sources || [],
-      processingTime: result.processingTime || processingTime,
+      procedure: result.procedure, // Inclusion des métadonnées de procédure pour le client
+      processingTime: result.processingTime || (Date.now() - startTime),
       timestamp: new Date().toISOString()
     });
     
   } catch (error: any) {
-    console.error('[API] Erreur:', error.message);
-    console.error(error.stack);
-    
+    console.error('[API] Chat Error:', error);
     return NextResponse.json({
-      answer: `❌ Erreur: ${error.message}`,
+      answer: `Une erreur technique est survenue.`,
       source: 'error',
-      confidence: 0,
-      error: error.message,
-      timestamp: new Date().toISOString()
+      error: error.message
     }, { status: 500 });
   }
-}
-
-// Option GET pour tester si l'API est disponible
-export async function GET() {
-  return NextResponse.json({
-    status: 'ok',
-    message: 'API Chat - Mode hybride RAG + Fallback',
-    version: '2.0',
-    providers: ['rag', 'fallback', 'generic'],
-    timestamp: new Date().toISOString()
-  });
 }
