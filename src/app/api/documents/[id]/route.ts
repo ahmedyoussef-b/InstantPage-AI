@@ -12,10 +12,11 @@ import { COLLECTION_MAPPING, DOCUMENTS_ROOT } from '@/lib/document-manager/confi
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const documentPath = await findDocumentById(params.id);
+    const { id } = await params;
+    const documentPath = await findDocumentById(id);
     
     if (!documentPath) {
       return NextResponse.json({ error: 'Document technique introuvable.' }, { status: 404 });
@@ -37,7 +38,7 @@ export async function GET(
     try {
       const searchRes = await manager.search(collectionName, fileName, {
         nResults: 1,
-        where: { id: params.id }
+        where: { id: id }
       });
       
       if (searchRes && searchRes.ids.length > 0) {
@@ -47,11 +48,11 @@ export async function GET(
         };
       }
     } catch (e) {
-      console.warn(`[API][GET] Erreur ChromaDB pour ${params.id}:`, e);
+      console.warn(`[API][GET] Erreur ChromaDB pour ${id}:`, e);
     }
 
     return NextResponse.json({
-      id: params.id,
+      id: id,
       name: fileName,
       path: documentPath,
       type: ext.substring(1).toUpperCase(),
@@ -73,7 +74,7 @@ export async function GET(
       },
       indexation: {
         collection: collectionName,
-        documentId: params.id,
+        documentId: id,
         status: chromaData ? 'synced' : 'pending',
         timestamp: chromaData?.metadata?.date_modification || stats.mtime.toISOString()
       },
@@ -102,10 +103,11 @@ export async function GET(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const documentPath = await findDocumentById(params.id);
+    const { id } = await params;
+    const documentPath = await findDocumentById(id);
     
     if (documentPath) {
       await unlink(documentPath);
@@ -116,8 +118,8 @@ export async function DELETE(
     
     for (const coll of stats) {
       try {
-        await manager.deleteDocuments(coll.id as any, [params.id]);
-        const chunks = Array.from({ length: 50 }, (_, i) => `${params.id}_chunk_${i}`);
+        await manager.deleteDocuments(coll.id as any, [id]);
+        const chunks = Array.from({ length: 50 }, (_, i) => `${id}_chunk_${i}`);
         await manager.deleteDocuments(coll.id as any, chunks);
       } catch (e) {}
     }

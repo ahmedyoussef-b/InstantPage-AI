@@ -10,11 +10,12 @@ import path from 'path';
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const { metadata } = await req.json();
-    const documentPath = await findDocumentById(params.id);
+    const documentPath = await findDocumentById(id);
     
     if (!documentPath) throw new Error("Document introuvable.");
 
@@ -26,7 +27,7 @@ export async function PUT(
     const fileName = path.basename(documentPath);
     
     // Récupérer le contenu existant
-    const current = await manager.search(collectionName, fileName, { nResults: 1, where: { id: params.id } });
+    const current = await manager.search(collectionName, fileName, { nResults: 1, where: { id: id } });
     const content = current.documents[0] || "";
 
     // Nettoyer les métadonnées pour ChromaDB
@@ -40,7 +41,7 @@ export async function PUT(
     });
 
     await manager.addDocuments(collectionName, [{
-      id: params.id,
+      id: id,
       content,
       metadata: { ...sanitizedMetadata, date_modification: new Date().toISOString() }
     }]);

@@ -6,10 +6,11 @@ const client = new ChromaClient({ path: process.env.CHROMADB_URL || "http://loca
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { name: string } }
+  { params }: { params: Promise<{ name: string }> }
 ) {
   try {
-    const collectionName = decodeURIComponent(params.name);
+    const { name } = await params;
+    const collectionName = decodeURIComponent(name);
     await client.deleteCollection({ name: collectionName });
     return NextResponse.json({ success: true });
   } catch (error: any) {
