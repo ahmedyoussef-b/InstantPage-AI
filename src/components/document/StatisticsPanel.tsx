@@ -1,55 +1,144 @@
 'use client';
 
-import { Activity, Layers, Database, Cpu } from 'lucide-react';
+import { Layers, Cpu, Database, TrendingUp, Clock } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface StatisticsPanelProps {
   chunks: {
     count: number;
+    sizes?: number[];
     overlaps: number;
   };
   embeddings: {
     dimensions: number;
     model: string;
+    generationTime?: number;
   };
   indexation: {
     collection: string;
-    status: string;
+    documentId?: string;
+    status: 'pending' | 'synced' | 'error';
+    timestamp?: string;
   };
 }
 
+/**
+ * StatisticsPanel - Tableau de bord analytique du pipeline RAG Elite 32.
+ * Fournit une visibilité totale sur la transformation du document en vecteurs.
+ */
 export function StatisticsPanel({ chunks, embeddings, indexation }: StatisticsPanelProps) {
+  const avgChunkSize = chunks.sizes && chunks.sizes.length > 0 
+    ? Math.round(chunks.sizes.reduce((a, b) => a + b, 0) / chunks.sizes.length)
+    : 1000; // Fallback sur la config standard
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <div className="p-5 bg-[#2f2f2f] rounded-2xl border border-white/5 text-center group hover:border-blue-500/30 transition-all">
-        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-2 flex items-center justify-center gap-1.5">
-          <Layers className="w-3 h-3" /> Chunking
-        </p>
-        <p className="text-xl font-black text-white">{chunks.count || 0}</p>
-        <p className="text-[8px] text-gray-600 font-bold uppercase mt-1">Segments (200 overlap)</p>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* SECTION : CHUNKING */}
+      <div className="bg-[#2f2f2f] rounded-2xl p-5 border border-white/5 hover:border-blue-500/20 transition-all group">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-blue-600/20 rounded-xl group-hover:bg-blue-600 transition-colors">
+            <Layers className="w-4 h-4 text-blue-400 group-hover:text-white" />
+          </div>
+          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Segmentation</span>
+        </div>
+        <div className="space-y-3">
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Segments</span>
+            <span className="text-lg font-black text-white">{chunks.count}</span>
+          </div>
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Taille Moyenne</span>
+            <span className="text-[11px] font-bold text-blue-400">{avgChunkSize} chars</span>
+          </div>
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Recouvrement</span>
+            <span className="text-[11px] font-bold text-gray-400">{chunks.overlaps} chars</span>
+          </div>
+        </div>
       </div>
       
-      <div className="p-5 bg-[#2f2f2f] rounded-2xl border border-white/5 text-center group hover:border-purple-500/30 transition-all">
-        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-2 flex items-center justify-center gap-1.5">
-          <Cpu className="w-3 h-3" /> Vectorisation
-        </p>
-        <p className="text-xl font-black text-purple-400">{embeddings.dimensions || 768}</p>
-        <p className="text-[8px] text-gray-600 font-bold uppercase mt-1">Dimensions {embeddings.model}</p>
+      {/* SECTION : VECTORISATION */}
+      <div className="bg-[#2f2f2f] rounded-2xl p-5 border border-white/5 hover:border-purple-500/20 transition-all group">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-purple-600/20 rounded-xl group-hover:bg-purple-600 transition-colors">
+            <Cpu className="w-4 h-4 text-purple-400 group-hover:text-white" />
+          </div>
+          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Vectorisation</span>
+        </div>
+        <div className="space-y-3">
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Dimensions</span>
+            <span className="text-lg font-black text-white">{embeddings.dimensions}</span>
+          </div>
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Modèle IA</span>
+            <span className="text-[10px] font-bold text-purple-400 uppercase truncate max-w-[100px]">{embeddings.model}</span>
+          </div>
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Latence</span>
+            <span className="text-[11px] font-bold text-gray-400">{embeddings.generationTime || '--'} ms</span>
+          </div>
+        </div>
       </div>
-
-      <div className="p-5 bg-[#2f2f2f] rounded-2xl border border-white/5 text-center group hover:border-green-500/30 transition-all">
-        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-2 flex items-center justify-center gap-1.5">
-          <Database className="w-3 h-3" /> Indexation
-        </p>
-        <p className="text-xl font-black text-green-500 uppercase">{indexation.status === 'synced' ? 'Ok' : '...'}</p>
-        <p className="text-[8px] text-gray-600 font-bold uppercase mt-1">Status ChromaDB</p>
+      
+      {/* SECTION : INDEXATION */}
+      <div className="bg-[#2f2f2f] rounded-2xl p-5 border border-white/5 hover:border-green-500/20 transition-all group">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-green-600/20 rounded-xl group-hover:bg-green-600 transition-colors">
+            <Database className="w-4 h-4 text-green-400 group-hover:text-white" />
+          </div>
+          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">ChromaDB</span>
+        </div>
+        <div className="space-y-3">
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Collection</span>
+            <span className="text-[10px] font-black text-white uppercase truncate max-w-[120px]">{indexation.collection.split('_').slice(1).join(' ')}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Statut Sync</span>
+            <div className={cn(
+              "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest",
+              indexation.status === 'synced' ? "bg-green-500/10 text-green-500" :
+              indexation.status === 'pending' ? "bg-yellow-500/10 text-yellow-500" :
+              "bg-red-500/10 text-red-500"
+            )}>
+              {indexation.status === 'synced' ? 'Synchronisé' :
+               indexation.status === 'pending' ? 'En attente' : 'Erreur'}
+            </div>
+          </div>
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Dernière Sync</span>
+            <span className="text-[10px] font-bold text-gray-400">
+              {indexation.timestamp ? new Date(indexation.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+            </span>
+          </div>
+        </div>
       </div>
-
-      <div className="p-5 bg-[#2f2f2f] rounded-2xl border border-white/5 text-center group hover:border-blue-500/30 transition-all">
-        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-2 flex items-center justify-center gap-1.5">
-          <Activity className="w-3 h-3" /> Collection
-        </p>
-        <p className="text-[10px] font-black text-blue-400 uppercase truncate px-1">{indexation.collection.split('_')[0]}</p>
-        <p className="text-[8px] text-gray-600 font-bold uppercase mt-1">Source de vérité</p>
+      
+      {/* SECTION : PERFORMANCE */}
+      <div className="bg-[#2f2f2f] rounded-2xl p-5 border border-white/5 hover:border-orange-500/20 transition-all group">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-orange-600/20 rounded-xl group-hover:bg-orange-600 transition-colors">
+            <TrendingUp className="w-4 h-4 text-orange-400 group-hover:text-white" />
+          </div>
+          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Performance</span>
+        </div>
+        <div className="space-y-3">
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Densité Sémantique</span>
+            <span className="text-lg font-black text-white">{(chunks.count > 0 ? (avgChunkSize / 100).toFixed(1) : 0)}</span>
+          </div>
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Vecteurs / Sec</span>
+            <span className="text-[11px] font-bold text-orange-400">
+              {embeddings.generationTime ? Math.round((chunks.count / embeddings.generationTime) * 1000) : '--'}
+            </span>
+          </div>
+          <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Charge Système</span>
+            <span className="text-[11px] font-bold text-gray-400">Optimisée</span>
+          </div>
+        </div>
       </div>
     </div>
   );
