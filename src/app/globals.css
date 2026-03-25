@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -60,6 +61,32 @@
   }
 }
 
+@layer utilities {
+  .document-page {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  .stat-card {
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg;
+  }
+
+  .metadata-edit input:focus,
+  .metadata-edit select:focus {
+    @apply ring-2 ring-blue-500 outline-none;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
 .chat-container {
   @apply bg-[#212121] text-white;
 }
@@ -70,4 +97,21 @@
 
 .input-container {
   @apply bg-[#2f2f2f] rounded-3xl border border-white/10;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }

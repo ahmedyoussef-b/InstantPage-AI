@@ -1,7 +1,7 @@
 
 /**
  * @fileOverview API Route /api/documents/[id] - GET & DELETE.
- * Orchestre la récupération des données physiques et vectorielles.
+ * Orchestre la récupération des données physiques et vectorielles (Next.js 15 Ready).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -34,7 +34,7 @@ export async function GET(
 
     // Récupérer les données depuis ChromaDB
     const manager = ChromaDBManager.getInstance();
-    let chromaData = null;
+    let chromaData: any = null;
     
     try {
       const searchRes = await manager.search(collectionName, fileName, {
@@ -54,7 +54,7 @@ export async function GET(
 
     // Lire le contenu si c'est un fichier texte
     let rawContent = "Fichier binaire.";
-    if (['.txt', '.md', '.json'].includes(ext)) {
+    if (['.txt', '.md', '.json', '.ts', '.tsx'].includes(ext)) {
       rawContent = await readFile(documentPath, 'utf-8');
     }
 

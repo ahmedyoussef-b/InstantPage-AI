@@ -1,6 +1,7 @@
+
 /**
- * @fileOverview DocumentProcessor - Service d'orchestration du traitement documentaire.
- * Gère l'extraction (OCR pour images), le smart-chunking et l'enrichissement des métadonnées.
+ * @fileOverview DocumentProcessor - Service d'orchestration du traitement documentaire amélioré.
+ * Gère l'extraction (OCR pour images), le smart-chunking et l'enrichissement des métadonnées industrielles.
  */
 
 import { readFile } from 'fs/promises';
@@ -27,7 +28,7 @@ export class DocumentProcessor {
     const fileName = path.basename(filePath);
     const extension = path.extname(filePath).toLowerCase();
     
-    this.onProgress?.('Analyse structurelle', 10);
+    this.onProgress?.('Analyse du document', 10);
     
     let content = '';
     let metadata: Record<string, any> = {};
@@ -35,14 +36,15 @@ export class DocumentProcessor {
     
     // 1. Extraction du contenu technique
     if (isImage) {
-      this.onProgress?.('OCR en cours (Prétraitement industriel)', 20);
+      this.onProgress?.('OCR en cours (image)', 20);
       const ocrResult = await this.ocrService.extractTextFromImage(filePath);
       content = ocrResult.text;
       metadata = await this.ocrService.extractMetadata(filePath);
       metadata.ocrConfidence = ocrResult.confidence;
       metadata.ocrLanguage = ocrResult.language;
+      metadata.ocrTime = ocrResult.processingTime;
     } else {
-      this.onProgress?.('Lecture du document texte', 20);
+      this.onProgress?.('Extraction du texte', 20);
       content = await readFile(filePath, 'utf-8');
     }
     
@@ -64,16 +66,19 @@ export class DocumentProcessor {
       titre: fileName,
       type: this.determineDocumentType(filePath, content),
       categorie: this.determineCategory(filePath),
+      sous_categorie: this.determineSubcategory(filePath),
       equipement: this.extractEquipement(fileName, content),
       zone: this.extractZone(filePath),
+      pupitre: this.extractPupitre(filePath),
+      profils_cibles: this.determineTargetProfiles(fileName, content),
       tags: this.generateTags(fileName, content, extension),
       source: filePath,
       version: '1.0',
       ...metadata
     });
     
-    // 4. Indexation vectorielle
-    this.onProgress?.('Génération d\'embeddings et Indexation', 80);
+    // 4. Indexation vectorielle (Upsert pour éviter les conflits d'ID)
+    this.onProgress?.('Indexation ChromaDB', 80);
     
     const documentsToIndex = chunks.map((chunk, index) => ({
       id: `${documentId}_chunk_${index}`,
@@ -86,20 +91,28 @@ export class DocumentProcessor {
       }
     }));
 
-    await this.chromaManager.addDocuments(collection, documentsToIndex);
-    this.onProgress?.('Indexation terminée', 100);
+    // On indexe aussi le document complet pour la page de détail
+    const mainDocument = {
+      id: documentId,
+      content: content,
+      metadata: {
+        ...enrichedMetadata,
+        is_chunk: false,
+        chunk_total: chunks.length
+      }
+    };
+
+    await this.chromaManager.upsertDocuments(collection, [mainDocument, ...documentsToIndex]);
+    this.onProgress?.('Terminé', 100);
   }
   
-  /**
-   * Découpe le texte en segments de 1000 caractères avec un recouvrement de 200.
-   */
   private smartChunking(content: string): string[] {
     const chunkSize = 1000;
     const overlap = 200;
     const chunks: string[] = [];
     
-    // Priorité au découpage par sections Markdown
-    const sections = content.split(/\n(?=#+\s)/);
+    // Détection des sections (markdown, titres)
+    const sections = content.split(/\n(?=#+\s|\d+\.\s)/);
     
     for (const section of sections) {
       if (section.length <= chunkSize) {
@@ -120,9 +133,21 @@ export class DocumentProcessor {
   
   private determineDocumentType(filePath: string, content: string): string {
     const fileName = path.basename(filePath).toLowerCase();
-    if (fileName.includes('demarrage')) return 'procedure_demarrage';
-    if (fileName.includes('arret')) return 'procedure_arret';
-    if (fileName.includes('alarme')) return 'consigne_alarme';
+    const contentLower = content.toLowerCase();
+    
+    if (fileName.includes('demarrage') || contentLower.includes('procédure de démarrage')) {
+      return 'procedure_demarrage';
+    }
+    if (fileName.includes('arret') || contentLower.includes('procédure d\'arrêt')) {
+      return 'procedure_arret';
+    }
+    if (fileName.includes('inspection') || contentLower.includes('round inspection')) {
+      return 'procedure_inspection';
+    }
+    if (fileName.includes('alarme') || contentLower.includes('gestion alarme')) {
+      return 'procedure_alarme';
+    }
+    
     return 'document_technique';
   }
   
@@ -131,24 +156,47 @@ export class DocumentProcessor {
     return parts[parts.length - 2] || 'general';
   }
   
-  private extractEquipement(fileName: string, content: string): string {
+  private determineSubcategory(filePath: string): string {
+    const parts = filePath.split(path.sep);
+    return parts[parts.length - 3] || 'general';
+  }
+  
+  private extractEquipement(fileName: string, content: string): string | undefined {
     const text = (fileName + ' ' + content).toUpperCase();
     if (text.includes('TG1')) return 'TG1';
     if (text.includes('TG2')) return 'TG2';
     if (text.includes('TV')) return 'TV';
-    return 'GENERAL';
+    if (text.includes('CHAUDIERE')) return 'chaudiere';
+    return undefined;
   }
   
-  private extractZone(filePath: string): string {
+  private extractZone(filePath: string): string | undefined {
     if (filePath.includes('Zone A')) return 'Zone A';
     if (filePath.includes('Zone B')) return 'Zone B';
-    return 'Centrale';
+    if (filePath.includes('salle_controle')) return 'salle_controle';
+    return undefined;
+  }
+  
+  private extractPupitre(filePath: string): string | undefined {
+    const path = filePath.toUpperCase();
+    if (path.includes('TG1') || path.includes('CR1')) return 'TG1_CR1';
+    if (path.includes('TG2') || path.includes('CR2')) return 'TG2_CR2';
+    return undefined;
+  }
+  
+  private determineTargetProfiles(fileName: string, content: string): string[] {
+    const text = (fileName + ' ' + content).toLowerCase();
+    const profiles: string[] = [];
+    if (text.includes('tg1') || text.includes('chaudiere')) profiles.push('chef_bloc_TG1');
+    if (text.includes('tg2')) profiles.push('chef_bloc_TG2');
+    if (text.includes('demarrage') || text.includes('arret')) profiles.push('chef_quart');
+    return profiles.length > 0 ? profiles : ['chef_quart'];
   }
   
   private generateTags(fileName: string, content: string, extension: string): string[] {
-    const tags = [extension.substring(1)];
-    const keywords = ['pression', 'temperature', 'vibration', 'securite'];
     const text = (fileName + ' ' + content).toLowerCase();
+    const tags: string[] = [extension.substring(1)];
+    const keywords = ['demarrage', 'arret', 'inspection', 'maintenance', 'alarme', 'securite'];
     keywords.forEach(k => { if (text.includes(k)) tags.push(k); });
     return tags;
   }

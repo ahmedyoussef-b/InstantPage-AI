@@ -1,5 +1,8 @@
 
-// src/app/api/documents/[id]/sync/route.ts
+/**
+ * @fileOverview API Route /api/documents/[id]/sync - Synchronisation manuelle (Next.js 15 Ready).
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { ChromaDBManager } from '@/ai/vector/chromadb-manager';
 import { createStandardMetadata, type CollectionName } from '@/ai/vector/chromadb-schema';

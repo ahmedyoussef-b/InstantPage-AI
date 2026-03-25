@@ -1,8 +1,18 @@
+
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, RefreshCw, Trash2, Download, Check, Layers } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  RefreshCw, 
+  Trash2, 
+  Download, 
+  Check, 
+  Layers,
+  ShieldCheck,
+  Target
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -11,6 +21,7 @@ import { ExtractionPanel } from '@/components/document/ExtractionPanel';
 import { StatisticsPanel } from '@/components/document/StatisticsPanel';
 import { MetadataPanel } from '@/components/document/MetadataPanel';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { cn } from '@/lib/utils';
 
 export default function DocumentDetailPage() {
   const router = useRouter();
@@ -51,17 +62,18 @@ export default function DocumentDetailPage() {
     loadDetails();
   }, [loadDetails]);
 
+  // Synchronisation en temps réel via SSE
   useEffect(() => {
-    if (lastEvent && lastEvent.path && data?.path && lastEvent.path === data.path) {
-      if (lastEvent.type === 'sync-complete') {
-        setSyncStatus('success');
-        loadDetails();
-        setTimeout(() => setSyncStatus('idle'), 3000);
-      } else if (lastEvent.type === 'sync-error') {
-        setSyncStatus('error');
-      }
+    if (lastEvent && lastEvent.type === 'sync-complete' && lastEvent.path === data?.path) {
+      setSyncStatus('success');
+      loadDetails();
+      toast({ title: "Synchronisation terminée", description: "Le jumeau numérique a été mis à jour." });
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    } else if (lastEvent && lastEvent.type === 'sync-error' && lastEvent.path === data?.path) {
+      setSyncStatus('error');
+      toast({ variant: "destructive", title: "Erreur Sync", description: lastEvent.error });
     }
-  }, [lastEvent, data?.path, loadDetails]);
+  }, [lastEvent, data?.path, loadDetails, toast]);
 
   const handleSync = async () => {
     setSyncStatus('syncing');
@@ -71,8 +83,8 @@ export default function DocumentDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath: data.path, collection: data.indexation.collection })
       });
-      if (!res.ok) throw new Error('Échec du pipeline RAG');
-      toast({ title: "Synchronisation lancée", description: "Le pipeline traite les données." });
+      if (!res.ok) throw new Error('Échec du déclenchement du pipeline RAG');
+      toast({ title: "Synchronisation lancée", description: "Le pipeline Elite 32 traite les données." });
     } catch (e: any) {
       setSyncStatus('error');
       toast({ variant: "destructive", title: "Erreur Sync", description: e.message });
@@ -128,17 +140,23 @@ export default function DocumentDetailPage() {
 
   if (loading) return (
     <div className="min-h-screen bg-[#171717] flex items-center justify-center">
-      <RefreshCw className="w-10 h-10 text-blue-500 animate-spin" />
+      <div className="flex flex-col items-center gap-4">
+        <RefreshCw className="w-10 h-10 text-blue-500 animate-spin" />
+        <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Chargement des données Elite...</p>
+      </div>
     </div>
   );
 
+  if (!data) return null;
+
   return (
-    <div className="min-h-screen bg-[#171717] text-white p-4 md:p-10 font-body flex flex-col">
+    <div className="min-h-screen bg-[#171717] text-white p-4 md:p-10 font-body flex flex-col document-page">
       <header className="max-w-7xl mx-auto w-full mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.back()} className="rounded-xl bg-white/5 border border-white/10 hover:bg-blue-600 transition-all">
-            <ArrowLeft className="w-4 h-4 mr-2" /> Retour
+          <Button variant="ghost" onClick={() => router.back()} className="rounded-xl bg-white/5 border border-white/10 hover:bg-blue-600 transition-all group">
+            <ArrowLeft className="w-4 h-4 mr-2 transition-transform group-hover:-translate-x-1" /> Retour
           </Button>
+          <div className="h-10 w-px bg-white/10 mx-2 hidden md:block" />
           <div>
             <h1 className="text-xl md:text-2xl font-black tracking-tighter uppercase truncate max-w-md">{data.name}</h1>
             <div className="flex items-center gap-2 mt-1">
@@ -148,15 +166,16 @@ export default function DocumentDetailPage() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
           <Button 
             onClick={handleSync} 
             disabled={syncStatus === 'syncing'} 
-            className={`rounded-xl font-bold text-xs gap-2 px-6 h-11 transition-all ${
+            className={cn(
+              "rounded-xl font-bold text-xs gap-2 px-6 h-11 transition-all shadow-lg",
               syncStatus === 'success' ? 'bg-green-600' : 
               syncStatus === 'error' ? 'bg-red-600' : 
-              'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20'
-            }`}
+              'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'
+            )}
           >
             {syncStatus === 'syncing' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
             {syncStatus === 'syncing' ? 'Synchronisation...' : 'Synchroniser RAG'}
@@ -209,11 +228,17 @@ export default function DocumentDetailPage() {
       </main>
 
       <footer className="max-w-7xl mx-auto w-full mt-10 pt-6 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-gray-600 uppercase tracking-widest">
-        <div className="flex items-center gap-2">
-          <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
-          <span>Canal {isConnected ? 'Synchronisé' : 'Interrompu'}</span>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <div className={cn("w-1.5 h-1.5 rounded-full", isConnected ? "bg-green-500" : "bg-red-500 animate-pulse")} />
+            <span>Canal {isConnected ? 'Synchronisé' : 'Interrompu'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+            <span>Cryptage Local Actif</span>
+          </div>
         </div>
-        <div>Modifié le {new Date(data.modifiedAt).toLocaleString()}</div>
+        <div>Dernière modification: {new Date(data.modifiedAt).toLocaleString()}</div>
       </footer>
     </div>
   );
