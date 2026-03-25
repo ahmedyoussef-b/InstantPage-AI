@@ -9,9 +9,9 @@ import {
   Loader2, 
   Sparkles, 
   FileText, 
-  Info, 
   Camera,
-  Layers
+  Layers,
+  Info
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,10 +31,6 @@ interface ExtractionPanelProps {
   saving: boolean;
 }
 
-/**
- * ExtractionPanel - Centre de contrôle de la vision IA
- * Gère l'édition du texte extrait et l'affichage des métadonnées techniques.
- */
 export function ExtractionPanel({
   extractedText,
   ocrConfidence,
@@ -50,7 +46,6 @@ export function ExtractionPanel({
 
   return (
     <Card className="bg-[#212121] border-white/5 rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 hover:border-purple-500/20">
-      {/* Header avec indicateur de confiance */}
       <div className="p-4 border-b border-white/5 bg-purple-600/10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-purple-600/20 rounded-lg">
@@ -102,7 +97,6 @@ export function ExtractionPanel({
         )}
       </div>
 
-      {/* Navigation par onglets industrielle */}
       <div className="flex bg-black/20 p-1">
         <button
           onClick={() => setActiveTab('text')}
@@ -150,7 +144,7 @@ export function ExtractionPanel({
                 </div>
                 <div className="prose prose-invert prose-xs max-w-none">
                   <p className="text-[11px] text-gray-400 leading-relaxed font-medium italic whitespace-pre-wrap">
-                    {extractedText || "Aucune donnée extraite. Lancez une synchronisation via le bouton ci-dessus."}
+                    {extractedText || "Aucune donnée extraite."}
                   </p>
                 </div>
               </div>
@@ -171,7 +165,7 @@ export function ExtractionPanel({
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
                   <Layers className="w-10 h-10 text-gray-700 opacity-20" />
-                  <p className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Aucune métadonnée EXIF</p>
+                  <p className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Aucune métadonnée technique</p>
                 </div>
               )}
             </div>

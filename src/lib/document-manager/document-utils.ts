@@ -10,7 +10,7 @@ import { DOCUMENTS_ROOT } from './config';
  * Génère un ID stable et URL-safe pour un chemin de fichier.
  */
 export function generateId(filePath: string): string {
-  const relative = path.relative(process.cwd(), filePath);
+  const relative = path.relative(DOCUMENTS_ROOT, filePath);
   return relative.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 }
 
@@ -31,7 +31,7 @@ export async function scanDirectory(dir: string): Promise<string[]> {
       }
     }
   } catch (e) {
-    console.error(`[UTILS] Erreur scan dossier: ${dir}`, e);
+    // Dossier peut ne pas exister encore
   }
   
   return files;

@@ -1,5 +1,5 @@
 /**
- * @fileOverview API Route /api/documents/[id]/text - Mise à jour du texte extrait.
+ * @fileOverview API Route /api/documents/[id]/text - Mise à jour du texte extrait dans ChromaDB.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -23,12 +23,13 @@ export async function PUT(
     const collectionName = (COLLECTION_MAPPING[folder] || 'DOCUMENTS_GENERAUX') as any;
 
     const manager = ChromaDBManager.getInstance();
+    const fileName = path.basename(documentPath);
     
-    // Récupérer les métadonnées existantes pour ne pas les perdre
-    const current = await manager.search(collectionName, params.id, { nResults: 1, where: { id: params.id } });
+    // Récupérer les métadonnées existantes
+    const current = await manager.search(collectionName, fileName, { nResults: 1, where: { id: params.id } });
     const metadata = current.metadatas[0] || {};
 
-    // Mettre à jour le document "parent" dans ChromaDB
+    // Mettre à jour le document principal dans ChromaDB
     await manager.addDocuments(collectionName, [{
       id: params.id,
       content: text,
@@ -37,6 +38,7 @@ export async function PUT(
 
     return NextResponse.json({ success: true, message: "Texte vectoriel mis à jour." });
   } catch (error: any) {
+    console.error('[API][TEXT] Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

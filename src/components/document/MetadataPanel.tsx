@@ -3,8 +3,6 @@
 import { useState } from 'react';
 import { 
   Edit3, 
-  Save, 
-  X, 
   Tag, 
   Users, 
   HardDrive, 
@@ -14,6 +12,7 @@ import {
   Monitor,
   Loader2,
   Check,
+  X,
   Plus
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -86,14 +85,8 @@ export function MetadataPanel({
     { id: 'maintenance', label: 'Maintenance' }
   ];
 
-  const tagSuggestions = [
-    'demarrage', 'arret', 'inspection', 'maintenance', 'alarme', 'urgence',
-    'securite', 'procedure', 'chaudiere', 'turbine', 'gaz', 'vapeur'
-  ];
-
   return (
     <Card className="bg-[#212121] border-white/5 rounded-3xl shadow-2xl overflow-hidden transition-all duration-500 hover:border-blue-500/20">
-      {/* Header Industriel */}
       <div className="p-4 border-b border-white/5 bg-blue-600/10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-600/20 rounded-lg">
@@ -139,44 +132,40 @@ export function MetadataPanel({
       </div>
 
       <CardContent className="p-6 space-y-6">
-        {/* Titre Principal */}
         <div className="space-y-2">
           <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest flex items-center gap-2">
-            <HardDrive className="w-3 h-3" /> Désignation du document
+            <HardDrive className="w-3 h-3" /> Désignation
           </label>
           {isEditing ? (
             <Input 
               value={metadata.titre} 
               onChange={(e) => handleFieldChange('titre', e.target.value)}
-              className="bg-black/40 border-white/5 text-white h-10 rounded-xl focus-visible:ring-blue-500"
+              className="bg-black/40 border-white/5 text-white h-10 rounded-xl"
             />
           ) : (
             <p className="text-sm font-black text-white uppercase tracking-tight truncate">{metadata.titre}</p>
           )}
         </div>
 
-        {/* Grille Type / Catégorie */}
         <div className="grid grid-cols-2 gap-6">
           <div className="space-y-2">
-            <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest">Type Opérationnel</label>
+            <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest">Type</label>
             {isEditing ? (
               <select
                 value={metadata.type}
                 onChange={(e) => handleFieldChange('type', e.target.value)}
-                className="w-full h-10 px-3 bg-black/40 border border-white/5 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full h-10 px-3 bg-black/40 border border-white/5 rounded-xl text-xs font-bold text-white focus:outline-none"
               >
-                <option value="procedure_demarrage">Procédure de démarrage</option>
-                <option value="procedure_arret">Procédure d'arrêt</option>
-                <option value="procedure_inspection">Procédure d'inspection</option>
-                <option value="procedure_alarme">Procédure d'alarme</option>
-                <option value="document_technique">Document technique</option>
+                <option value="procedure_demarrage">Démarrage</option>
+                <option value="procedure_arret">Arrêt</option>
+                <option value="document_technique">Fiche Technique</option>
               </select>
             ) : (
-              <Badge variant="outline" className="bg-white/5 border-white/10 text-gray-300 text-[10px] font-bold h-7">{metadata.type.replace('_', ' ')}</Badge>
+              <Badge variant="outline" className="bg-white/5 border-white/10 text-gray-300 text-[10px] h-7 font-bold">{metadata.type.replace('_', ' ')}</Badge>
             )}
           </div>
           <div className="space-y-2">
-            <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest">Catégorie Système</label>
+            <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest">Catégorie</label>
             {isEditing ? (
               <Input 
                 value={metadata.categorie} 
@@ -189,12 +178,11 @@ export function MetadataPanel({
           </div>
         </div>
 
-        {/* Section Équipement / Zone / Pupitre */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest flex items-center gap-1.5"><Cpu className="w-3 h-3" /> Équipement</label>
             {isEditing ? (
-              <Input value={metadata.equipement || ''} onChange={(e) => handleFieldChange('equipement', e.target.value)} className="bg-black/40 border-white/5 text-white h-9 text-xs rounded-xl" placeholder="Ex: TG1" />
+              <Input value={metadata.equipement || ''} onChange={(e) => handleFieldChange('equipement', e.target.value)} className="bg-black/40 border-white/5 text-white h-9 text-xs rounded-xl" />
             ) : (
               <p className="text-xs font-black text-white">{metadata.equipement || '-'}</p>
             )}
@@ -202,7 +190,7 @@ export function MetadataPanel({
           <div className="space-y-2">
             <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest flex items-center gap-1.5"><MapPin className="w-3 h-3" /> Zone</label>
             {isEditing ? (
-              <Input value={metadata.zone || ''} onChange={(e) => handleFieldChange('zone', e.target.value)} className="bg-black/40 border-white/5 text-white h-9 text-xs rounded-xl" placeholder="Ex: Salle Contrôle" />
+              <Input value={metadata.zone || ''} onChange={(e) => handleFieldChange('zone', e.target.value)} className="bg-black/40 border-white/5 text-white h-9 text-xs rounded-xl" />
             ) : (
               <p className="text-xs font-black text-white">{metadata.zone || '-'}</p>
             )}
@@ -210,17 +198,16 @@ export function MetadataPanel({
           <div className="space-y-2">
             <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest flex items-center gap-1.5"><Monitor className="w-3 h-3" /> Pupitre</label>
             {isEditing ? (
-              <Input value={metadata.pupitre || ''} onChange={(e) => handleFieldChange('pupitre', e.target.value)} className="bg-black/40 border-white/5 text-white h-9 text-xs rounded-xl" placeholder="Ex: TG1_CR1" />
+              <Input value={metadata.pupitre || ''} onChange={(e) => handleFieldChange('pupitre', e.target.value)} className="bg-black/40 border-white/5 text-white h-9 text-xs rounded-xl" />
             ) : (
               <p className="text-xs font-black text-white">{metadata.pupitre || '-'}</p>
             )}
           </div>
         </div>
 
-        {/* Profils Cibles - Multiselect par Badges */}
         <div className="space-y-3">
           <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest flex items-center gap-2">
-            <Users className="w-3.5 h-3.5" /> Profils d'Opérateurs Cibles
+            <Users className="w-3.5 h-3.5" /> Profils Cibles
           </label>
           <div className="flex flex-wrap gap-2">
             {profileOptions.map(profile => {
@@ -235,7 +222,7 @@ export function MetadataPanel({
                     isActive 
                       ? "bg-green-600/20 text-green-400 border border-green-500/30" 
                       : "bg-white/5 text-gray-600 border border-transparent",
-                    isEditing && !isActive && "hover:bg-white/10 hover:text-gray-400"
+                    isEditing && !isActive && "hover:bg-white/10"
                   )}
                 >
                   {profile.label}
@@ -245,10 +232,9 @@ export function MetadataPanel({
           </div>
         </div>
 
-        {/* Tags avec Suggestions */}
         <div className="space-y-3">
           <label className="text-[9px] font-black text-gray-600 uppercase tracking-widest flex items-center gap-2">
-            <Tag className="w-3.5 h-3.5" /> Indexation par Mots-Clés
+            <Tag className="w-3.5 h-3.5" /> Tags
           </label>
           <div className="flex flex-wrap gap-2">
             {metadata.tags.map(tag => (
@@ -271,43 +257,12 @@ export function MetadataPanel({
                   placeholder="Nouveau tag..."
                   className="h-7 w-32 text-[10px] bg-black/40 border-white/10 rounded-lg"
                 />
-                <Button size="icon" onClick={handleAddTag} className="h-7 w-7 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg">
+                <Button size="icon" onClick={handleAddTag} className="h-7 w-7 bg-blue-600/20 text-blue-400 rounded-lg">
                   <Plus className="w-3.5 h-3.5" />
                 </Button>
               </div>
             )}
           </div>
-          
-          {isEditing && (
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {tagSuggestions.filter(t => !metadata.tags.includes(t)).slice(0, 8).map(suggestion => (
-                <button
-                  key={suggestion}
-                  onClick={() => handleArrayToggle('tags', suggestion)}
-                  className="text-[9px] font-bold uppercase px-2 py-1 bg-white/5 text-gray-500 rounded-md hover:bg-white/10 hover:text-blue-400 transition-all"
-                >
-                  + {suggestion}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer avec version */}
-        <div className="pt-4 border-t border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-black text-gray-600 uppercase tracking-widest">Version sémantique</span>
-            {isEditing ? (
-              <Input 
-                value={metadata.version} 
-                onChange={(e) => handleFieldChange('version', e.target.value)}
-                className="h-7 w-16 bg-black/40 border-white/10 text-[10px] font-mono text-center"
-              />
-            ) : (
-              <span className="text-[10px] font-mono text-white bg-white/5 px-2 py-0.5 rounded border border-white/5">{metadata.version}</span>
-            )}
-          </div>
-          <p className="text-[8px] font-bold text-gray-700 uppercase tracking-[0.3em]">AGENTIC SYSTEM v4.0</p>
         </div>
       </CardContent>
     </Card>

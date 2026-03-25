@@ -1,45 +1,40 @@
 'use client';
 
-import { Layers, Cpu, Database, TrendingUp, Clock } from 'lucide-react';
+import { Layers, Cpu, Database, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface StatisticsPanelProps {
   chunks: {
     count: number;
-    sizes?: number[];
+    sizes: number[];
     overlaps: number;
   };
   embeddings: {
     dimensions: number;
     model: string;
-    generationTime?: number;
+    generationTime: number;
   };
   indexation: {
     collection: string;
-    documentId?: string;
+    documentId: string;
     status: 'pending' | 'synced' | 'error';
-    timestamp?: string;
+    timestamp: string;
   };
 }
 
-/**
- * StatisticsPanel - Tableau de bord analytique du pipeline RAG Elite 32.
- * Fournit une visibilité totale sur la transformation du document en vecteurs.
- */
 export function StatisticsPanel({ chunks, embeddings, indexation }: StatisticsPanelProps) {
-  const avgChunkSize = chunks.sizes && chunks.sizes.length > 0 
+  const avgChunkSize = chunks.sizes.length > 0 
     ? Math.round(chunks.sizes.reduce((a, b) => a + b, 0) / chunks.sizes.length)
-    : 1000; // Fallback sur la config standard
+    : 1000;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {/* SECTION : CHUNKING */}
       <div className="bg-[#2f2f2f] rounded-2xl p-5 border border-white/5 hover:border-blue-500/20 transition-all group">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-blue-600/20 rounded-xl group-hover:bg-blue-600 transition-colors">
             <Layers className="w-4 h-4 text-blue-400 group-hover:text-white" />
           </div>
-          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Segmentation</span>
+          <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Chunking</span>
         </div>
         <div className="space-y-3">
           <div className="flex justify-between items-end">
@@ -50,14 +45,9 @@ export function StatisticsPanel({ chunks, embeddings, indexation }: StatisticsPa
             <span className="text-[9px] font-black text-gray-600 uppercase">Taille Moyenne</span>
             <span className="text-[11px] font-bold text-blue-400">{avgChunkSize} chars</span>
           </div>
-          <div className="flex justify-between items-end">
-            <span className="text-[9px] font-black text-gray-600 uppercase">Recouvrement</span>
-            <span className="text-[11px] font-bold text-gray-400">{chunks.overlaps} chars</span>
-          </div>
         </div>
       </div>
       
-      {/* SECTION : VECTORISATION */}
       <div className="bg-[#2f2f2f] rounded-2xl p-5 border border-white/5 hover:border-purple-500/20 transition-all group">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-purple-600/20 rounded-xl group-hover:bg-purple-600 transition-colors">
@@ -74,14 +64,9 @@ export function StatisticsPanel({ chunks, embeddings, indexation }: StatisticsPa
             <span className="text-[9px] font-black text-gray-600 uppercase">Modèle IA</span>
             <span className="text-[10px] font-bold text-purple-400 uppercase truncate max-w-[100px]">{embeddings.model}</span>
           </div>
-          <div className="flex justify-between items-end">
-            <span className="text-[9px] font-black text-gray-600 uppercase">Latence</span>
-            <span className="text-[11px] font-bold text-gray-400">{embeddings.generationTime || '--'} ms</span>
-          </div>
         </div>
       </div>
       
-      {/* SECTION : INDEXATION */}
       <div className="bg-[#2f2f2f] rounded-2xl p-5 border border-white/5 hover:border-green-500/20 transition-all group">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-green-600/20 rounded-xl group-hover:bg-green-600 transition-colors">
@@ -90,10 +75,6 @@ export function StatisticsPanel({ chunks, embeddings, indexation }: StatisticsPa
           <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">ChromaDB</span>
         </div>
         <div className="space-y-3">
-          <div className="flex justify-between items-end">
-            <span className="text-[9px] font-black text-gray-600 uppercase">Collection</span>
-            <span className="text-[10px] font-black text-white uppercase truncate max-w-[120px]">{indexation.collection.split('_').slice(1).join(' ')}</span>
-          </div>
           <div className="flex justify-between items-center">
             <span className="text-[9px] font-black text-gray-600 uppercase">Statut Sync</span>
             <div className={cn(
@@ -107,15 +88,12 @@ export function StatisticsPanel({ chunks, embeddings, indexation }: StatisticsPa
             </div>
           </div>
           <div className="flex justify-between items-end">
-            <span className="text-[9px] font-black text-gray-600 uppercase">Dernière Sync</span>
-            <span className="text-[10px] font-bold text-gray-400">
-              {indexation.timestamp ? new Date(indexation.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
-            </span>
+            <span className="text-[9px] font-black text-gray-600 uppercase">Collection</span>
+            <span className="text-[10px] font-black text-white uppercase truncate max-w-[120px]">{indexation.collection}</span>
           </div>
         </div>
       </div>
       
-      {/* SECTION : PERFORMANCE */}
       <div className="bg-[#2f2f2f] rounded-2xl p-5 border border-white/5 hover:border-orange-500/20 transition-all group">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-orange-600/20 rounded-xl group-hover:bg-orange-600 transition-colors">
@@ -125,18 +103,12 @@ export function StatisticsPanel({ chunks, embeddings, indexation }: StatisticsPa
         </div>
         <div className="space-y-3">
           <div className="flex justify-between items-end">
+            <span className="text-[9px] font-black text-gray-600 uppercase">Latence</span>
+            <span className="text-[11px] font-bold text-gray-400">{embeddings.generationTime || '--'} ms</span>
+          </div>
+          <div className="flex justify-between items-end">
             <span className="text-[9px] font-black text-gray-600 uppercase">Densité Sémantique</span>
             <span className="text-lg font-black text-white">{(chunks.count > 0 ? (avgChunkSize / 100).toFixed(1) : 0)}</span>
-          </div>
-          <div className="flex justify-between items-end">
-            <span className="text-[9px] font-black text-gray-600 uppercase">Vecteurs / Sec</span>
-            <span className="text-[11px] font-bold text-orange-400">
-              {embeddings.generationTime ? Math.round((chunks.count / embeddings.generationTime) * 1000) : '--'}
-            </span>
-          </div>
-          <div className="flex justify-between items-end">
-            <span className="text-[9px] font-black text-gray-600 uppercase">Charge Système</span>
-            <span className="text-[11px] font-bold text-gray-400">Optimisée</span>
           </div>
         </div>
       </div>

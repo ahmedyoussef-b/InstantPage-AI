@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, RefreshCw, Trash2, Download, Check, Target, Layers } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Trash2, Download, Check, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -52,12 +52,13 @@ export default function DocumentDetailPage() {
   }, [loadDetails]);
 
   useEffect(() => {
-    // Si un événement de synchronisation globale se termine pour ce fichier
     if (lastEvent && lastEvent.path && data?.path && lastEvent.path === data.path) {
       if (lastEvent.type === 'sync-complete') {
         setSyncStatus('success');
         loadDetails();
         setTimeout(() => setSyncStatus('idle'), 3000);
+      } else if (lastEvent.type === 'sync-error') {
+        setSyncStatus('error');
       }
     }
   }, [lastEvent, data?.path, loadDetails]);
@@ -65,7 +66,6 @@ export default function DocumentDetailPage() {
   const handleSync = async () => {
     setSyncStatus('syncing');
     try {
-      // Route pour forcer une re-vectorisation complète
       const res = await fetch(`/api/documents/vectorize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -82,11 +82,12 @@ export default function DocumentDetailPage() {
   const handleSaveText = async () => {
     setSaving(true);
     try {
-      await fetch(`/api/documents/${documentId}/text`, {
+      const res = await fetch(`/api/documents/${documentId}/text`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: editedText })
       });
+      if (!res.ok) throw new Error("Échec sauvegarde texte");
       setIsEditingText(false);
       toast({ title: "Texte sauvegardé", description: "La base vectorielle a été mise à jour." });
     } catch (e) {
@@ -99,11 +100,12 @@ export default function DocumentDetailPage() {
   const handleSaveMetadata = async () => {
     setSaving(true);
     try {
-      await fetch(`/api/documents/${documentId}/metadata`, {
+      const res = await fetch(`/api/documents/${documentId}/metadata`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ metadata: editedMetadata })
       });
+      if (!res.ok) throw new Error("Échec sauvegarde métadonnées");
       setIsEditingMetadata(false);
       toast({ title: "Métadonnées sauvegardées", description: "ChromaDB a été synchronisée." });
     } catch (e) {
@@ -151,7 +153,9 @@ export default function DocumentDetailPage() {
             onClick={handleSync} 
             disabled={syncStatus === 'syncing'} 
             className={`rounded-xl font-bold text-xs gap-2 px-6 h-11 transition-all ${
-              syncStatus === 'success' ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20'
+              syncStatus === 'success' ? 'bg-green-600' : 
+              syncStatus === 'error' ? 'bg-red-600' : 
+              'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20'
             }`}
           >
             {syncStatus === 'syncing' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
@@ -193,7 +197,7 @@ export default function DocumentDetailPage() {
           />
 
           <MetadataPanel 
-            metadata={editedMetadata}
+            metadata={editedMetadata || data.metadataFields}
             isEditing={isEditingMetadata}
             onEdit={() => setIsEditingMetadata(true)}
             onSave={handleSaveMetadata}

@@ -1,5 +1,5 @@
 /**
- * @fileOverview API Route /api/documents/[id]/metadata - Mise à jour des métadonnées.
+ * @fileOverview API Route /api/documents/[id]/metadata - Mise à jour des métadonnées dans ChromaDB.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -23,17 +23,18 @@ export async function PUT(
     const collectionName = (COLLECTION_MAPPING[folder] || 'DOCUMENTS_GENERAUX') as any;
 
     const manager = ChromaDBManager.getInstance();
+    const fileName = path.basename(documentPath);
     
     // Récupérer le contenu existant
-    const current = await manager.search(collectionName, params.id, { nResults: 1, where: { id: params.id } });
+    const current = await manager.search(collectionName, fileName, { nResults: 1, where: { id: params.id } });
     const content = current.documents[0] || "";
 
-    // Fusionner et nettoyer les métadonnées pour ChromaDB (strings seulement)
+    // Nettoyer les métadonnées pour ChromaDB
     const sanitizedMetadata: Record<string, string> = {};
     Object.entries(metadata).forEach(([key, value]) => {
       if (Array.isArray(value)) {
         sanitizedMetadata[key] = value.join(', ');
-      } else {
+      } else if (value !== null && value !== undefined) {
         sanitizedMetadata[key] = String(value);
       }
     });
@@ -44,8 +45,9 @@ export async function PUT(
       metadata: { ...sanitizedMetadata, date_modification: new Date().toISOString() }
     }]);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: "Métadonnées synchronisées." });
   } catch (error: any) {
+    console.error('[API][METADATA] Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -1,14 +1,14 @@
 /**
  * @fileOverview API Route /api/documents/[id] - GET & DELETE.
+ * Orchestre la récupération des données physiques et vectorielles.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, stat, unlink } from 'fs/promises';
+import { stat, unlink } from 'fs/promises';
 import path from 'path';
 import { findDocumentById } from '@/lib/document-manager/document-utils';
 import { ChromaDBManager } from '@/ai/vector/chromadb-manager';
-import { COLLECTION_MAPPING } from '@/lib/document-manager/config';
-import { DOCUMENTS_ROOT } from '@/lib/document-manager/config';
+import { COLLECTION_MAPPING, DOCUMENTS_ROOT } from '@/lib/document-manager/config';
 
 export async function GET(
   req: NextRequest,
@@ -35,7 +35,6 @@ export async function GET(
     let chromaData = null;
     
     try {
-      // On cherche par ID de document (le processeur indexe le document complet + les chunks)
       const searchRes = await manager.search(collectionName, fileName, {
         nResults: 1,
         where: { id: params.id }
@@ -85,16 +84,12 @@ export async function GET(
         equipement: chromaData?.metadata?.equipement || '',
         zone: chromaData?.metadata?.zone || '',
         pupitre: chromaData?.metadata?.pupitre || '',
-        profils_cibles: Array.isArray(chromaData?.metadata?.profils_cibles) 
-          ? chromaData.metadata.profils_cibles 
-          : typeof chromaData?.metadata?.profils_cibles === 'string'
-            ? chromaData.metadata.profils_cibles.split(',').map((s: string) => s.trim())
-            : ['chef_quart'],
-        tags: Array.isArray(chromaData?.metadata?.tags)
-          ? chromaData.metadata.tags
-          : typeof chromaData?.metadata?.tags === 'string'
-            ? chromaData.metadata.tags.split(',').map((s: string) => s.trim())
-            : [],
+        profils_cibles: typeof chromaData?.metadata?.profils_cibles === 'string'
+          ? chromaData.metadata.profils_cibles.split(',').map((s: string) => s.trim())
+          : (chromaData?.metadata?.profils_cibles || ['chef_quart']),
+        tags: typeof chromaData?.metadata?.tags === 'string'
+          ? chromaData.metadata.tags.split(',').map((s: string) => s.trim())
+          : (chromaData?.metadata?.tags || []),
         version: chromaData?.metadata?.version || '1.0'
       }
     });
@@ -112,20 +107,16 @@ export async function DELETE(
   try {
     const documentPath = await findDocumentById(params.id);
     
-    // 1. Suppression physique
     if (documentPath) {
       await unlink(documentPath);
-      console.log(`[API][DELETE] Fichier physique supprimé: ${documentPath}`);
     }
     
-    // 2. Suppression de ChromaDB
     const manager = ChromaDBManager.getInstance();
     const stats = await manager.getAllCollectionsStats();
     
     for (const coll of stats) {
       try {
         await manager.deleteDocuments(coll.id as any, [params.id]);
-        // Supprimer aussi les chunks potentiels
         const chunks = Array.from({ length: 50 }, (_, i) => `${params.id}_chunk_${i}`);
         await manager.deleteDocuments(coll.id as any, chunks);
       } catch (e) {}
