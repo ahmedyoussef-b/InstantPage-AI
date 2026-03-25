@@ -1,5 +1,5 @@
-// src/ai/vector/embeddings.ts
-import { EmbeddingFunction } from 'chromadb';
+// ✅ Correction: utiliser EmbeddingFunction au lieu de IEmbeddingFunction
+import type { EmbeddingFunction } from 'chromadb';
 
 /**
  * Implémentation via Ollama (Recommandé pour AGENTIC-ELITE)
@@ -16,7 +16,6 @@ export class OllamaEmbeddingFunction implements EmbeddingFunction {
     this.model = model;
     this.url = url;
     
-    // Ajouter l'en-tête pour ngrok
     this.headers = {
       'Content-Type': 'application/json'
     };
@@ -27,7 +26,6 @@ export class OllamaEmbeddingFunction implements EmbeddingFunction {
   }
 
   async generate(texts: string[]): Promise<number[][]> {
-    // OPT-2: génération en PARALLÈLE via Promise.all — élimine la latence ×N de la boucle séquentielle
     return Promise.all(
       texts.map(async (text) => {
         try {
@@ -59,6 +57,7 @@ export class OllamaEmbeddingFunction implements EmbeddingFunction {
 
 /**
  * Factory pour récupérer la fonction d'embedding configurée
+ * ✅ Correction: Type de retour EmbeddingFunction
  */
 export function getEmbeddingFunction(): EmbeddingFunction {
   const provider = process.env.EMBEDDING_PROVIDER || 'ollama';

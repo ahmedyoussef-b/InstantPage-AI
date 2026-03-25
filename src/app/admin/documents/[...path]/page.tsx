@@ -1,5 +1,5 @@
+//src/app/admin/documents/[...path]/page.tsx
 'use client';
-
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { 
@@ -38,10 +38,16 @@ export default function DocumentDetailPage() {
   const filePath = Array.isArray(params.path) ? params.path.join('/') : params.path;
 
   const loadDetails = useCallback(async () => {
+    // ✅ Correction 1: Vérifier filePath avant l'appel API
+    if (!filePath) {
+      toast({ variant: "destructive", title: "Erreur", description: "Chemin de fichier invalide" });
+      router.push('/admin');
+      return;
+    }
+    
     try {
       setLoading(true);
-      const res = await fetch(`/api/documents/detail?path=${encodeURIComponent(filePath)}`);
-      const result = await res.json();
+      const res = await fetch(`/api/documents/detail?path=${encodeURIComponent(filePath)}`);      const result = await res.json();
       if (result.error) throw new Error(result.error);
       
       setData(result);
@@ -69,7 +75,7 @@ export default function DocumentDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [filePath, toast]);
+  }, [filePath, toast, router]);
 
   useEffect(() => {
     loadDetails();
@@ -111,7 +117,6 @@ export default function DocumentDetailPage() {
   const handleSaveText = async () => {
     setSaving(true);
     try {
-      // Pour ce prototype, on synchronise directement avec ChromaDB
       await handleSync();
       setIsEditingText(false);
     } catch (e) {
@@ -136,11 +141,14 @@ export default function DocumentDetailPage() {
   const handleDelete = async () => {
     if (!confirm("Purger définitivement ce document de la base vectorielle ?")) return;
     try {
+      // ✅ Correction 2: Sécuriser filePath
+      const safeDocumentId = data.vector?.id || (filePath ? filePath.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() : 'unknown');
+      
       const res = await fetch('/api/documents/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          documentId: data.vector?.id || filePath.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(), 
+          documentId: safeDocumentId, 
           collection: data.collection,
           filePath: data.file.path
         })
@@ -229,10 +237,24 @@ export default function DocumentDetailPage() {
             saving={saving}
           />
 
+          {/* ✅ Correction 3: Props complètes pour StatisticsPanel */}
           <StatisticsPanel 
-            chunks={{ count: data.vector?.metadata?.chunk_total || 0, overlaps: 200 }}
-            embeddings={{ dimensions: 768, model: 'nomic-embed-text' }}
-            indexation={{ collection: data.collection, status: data.vector ? 'synced' : 'pending' }}
+            chunks={{ 
+              count: data.vector?.metadata?.chunk_total || 0, 
+              overlaps: 200,
+              sizes: data.vector?.metadata?.chunk_sizes || []
+            }}
+            embeddings={{ 
+              dimensions: 768, 
+              model: 'nomic-embed-text',
+              generationTime: data.vector?.metadata?.embedding_time || 0
+            }}
+            indexation={{ 
+              collection: data.collection, 
+              status: data.vector ? 'synced' : 'pending',
+              documentId: data.vector?.id || '',
+              timestamp: data.vector?.timestamp || new Date().toISOString()
+            }}
           />
 
           <MetadataPanel 

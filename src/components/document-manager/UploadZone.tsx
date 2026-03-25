@@ -180,7 +180,10 @@ export function UploadZone({ onUpload, currentPath, onPathChange, availablePaths
                   </div>
                 )}
                 {upload.status === 'error' && (
-                  <AlertCircle className="w-4 h-4 text-red-500" title={upload.error} />
+                  // ✅ Correction: Utilisation d'un wrapper avec title
+                  <div className="relative group" title={upload.error}>
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                  </div>
                 )}
                 <button
                   onClick={() => setUploads(prev => prev.filter(u => u.id !== upload.id))}

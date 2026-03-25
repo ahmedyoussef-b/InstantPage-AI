@@ -1,7 +1,5 @@
-
 // src/ai/vector/chromadb-manager.ts
-import { ChromaClient, Collection, CollectionMetadata } from 'chromadb';
-import { EmbeddingFunction } from 'chromadb';
+import { ChromaClient, Collection, CollectionMetadata, EmbeddingFunction } from 'chromadb';
 import { ChromaCollections, CollectionName } from './chromadb-schema';
 import { logger } from '@/lib/logger';
 import { getEmbeddingFunction } from './embeddings';
@@ -55,6 +53,63 @@ export class ChromaDBManager {
         return ChromaDBManager.instance;
     }
 
+    async initialize(): Promise<void> {
+        if (this.initialized) return;
+        try {
+            await this.client.heartbeat();
+            logger.info('ChromaDB connected successfully');
+            this.initialized = true;
+        } catch (error) {
+            logger.error('ChromaDB initialization failed:', error);
+            throw error;
+        }
+    }
+
+    async initializeAllCollections(): Promise<void> {
+        if (this.initialized) return;
+        try {
+            await this.client.heartbeat();
+            logger.info('✅ ChromaDB connected successfully');
+            
+            const collectionEntries = Object.entries(ChromaCollections);
+            logger.info(`📁 Initializing ${collectionEntries.length} collections...`);
+            
+            for (const [key, config] of collectionEntries) {
+                try {
+                    await this.getOrCreateCollection(key as CollectionName);
+                    logger.info(`  ✓ ${config.name}`);
+                } catch (error) {
+                    logger.error(`  ✗ Failed to initialize ${config.name}:`, error);
+                    throw error;
+                }
+            }
+            this.initialized = true;
+            logger.info('✨ All ChromaDB collections initialized successfully');
+            await this.logCollectionSummary();
+        } catch (error) {
+            logger.error('ChromaDB initialization failed:', error);
+            throw error;
+        }
+    }
+
+    async logCollectionSummary(): Promise<void> {
+        logger.info('\n📊 ChromaDB Collections Summary:');
+        logger.info('─'.repeat(50));
+        
+        for (const [key, config] of Object.entries(ChromaCollections)) {
+            try {
+                const collection = await this.getOrCreateCollection(key as CollectionName);
+                const count = await collection.count();
+                const paddedKey = key.padEnd(30);
+                const paddedCount = String(count).padStart(8);
+                logger.info(`  ${paddedKey} : ${paddedCount} documents`);
+            } catch (error) {
+                logger.error(`  ${key.padEnd(30)} : ERROR`);
+            }
+        }
+        logger.info('─'.repeat(50));
+    }
+
     async getStatus(): Promise<{ connected: boolean; version?: string; error?: string }> {
         try {
             const version = await this.client.version();
@@ -90,8 +145,10 @@ export class ChromaDBManager {
         for (const [key, value] of Object.entries(metadata)) {
             if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
                 converted[key] = value;
-            } else {
-                converted[key] = JSON.stringify(value);
+            } else if (Array.isArray(value)) {
+                converted[key] = value.join(', ');
+            } else if (value !== null && value !== undefined) {
+                converted[key] = String(value);
             }
         }
         return converted as CollectionMetadata;
@@ -111,17 +168,32 @@ export class ChromaDBManager {
         return sanitized;
     }
 
-    async addDocuments(collectionName: CollectionName, documents: any[]): Promise<void> {
+    async addDocuments(collectionName: CollectionName, documents: Array<{
+        id: string;
+        content: string;
+        metadata: Record<string, any>;
+    }>): Promise<void> {
         return this.processBatchAction(collectionName, documents, 'add');
     }
 
-    async upsertDocuments(collectionName: CollectionName, documents: any[]): Promise<void> {
+    async upsertDocuments(collectionName: CollectionName, documents: Array<{
+        id: string;
+        content: string;
+        metadata: Record<string, any>;
+    }>): Promise<void> {
         return this.processBatchAction(collectionName, documents, 'upsert');
     }
 
-    private async processBatchAction(collectionName: CollectionName, documents: any[], action: 'add' | 'upsert'): Promise<void> {
+    private async processBatchAction(
+        collectionName: CollectionName, 
+        documents: Array<{ id: string; content: string; metadata: Record<string, any> }>, 
+        action: 'add' | 'upsert'
+    ): Promise<void> {
         if (!documents.length) return;
-        if (this.isCircuitOpen()) return;
+        if (this.isCircuitOpen()) {
+            logger.warn(`[CB] Circuit ouvert, skipping ${action} for ${collectionName}`);
+            return;
+        }
 
         try {
             const collection = await this.getOrCreateCollection(collectionName);
@@ -137,44 +209,160 @@ export class ChromaDBManager {
                 else await collection.upsert(payload);
             }
             this.recordSuccess();
+            logger.debug(`${action} completed: ${documents.length} docs to ${collectionName}`);
         } catch (error) {
             this.recordFailure();
+            logger.error(`Failed to ${action} documents to ${collectionName}:`, error);
             throw error;
         }
     }
 
-    async deleteDocuments(collectionName: CollectionName, ids: string[]): Promise<void> {
+    async updateDocument(
+        collectionName: CollectionName,
+        id: string,
+        content?: string,
+        metadata?: Record<string, any>
+    ): Promise<void> {
         if (this.isCircuitOpen()) return;
         try {
             const collection = await this.getOrCreateCollection(collectionName);
-            await collection.delete({ ids });
+            await collection.update({
+                ids: [id],
+                documents: content ? [content] : undefined,
+                metadatas: metadata ? [this.sanitizeMetadata(metadata)] : undefined
+            });
             this.recordSuccess();
+            logger.debug(`Updated document ${id} in ${collectionName}`);
         } catch (error) {
             this.recordFailure();
             throw error;
         }
     }
 
-    async search(collectionName: CollectionName, query: string, options: any = {}): Promise<any> {
-        if (this.isCircuitOpen()) return { documents: [], metadatas: [], distances: [], ids: [] };
+    async deleteDocuments(
+        collectionName: CollectionName, 
+        where?: Record<string, any>, 
+        ids?: string[]
+    ): Promise<void> {
+        if (this.isCircuitOpen()) return;
+        try {
+            const collection = await this.getOrCreateCollection(collectionName);
+            if (ids && ids.length) {
+                await collection.delete({ ids });
+            } else if (where) {
+                await collection.delete({ where: where as any });
+            }
+            this.recordSuccess();
+            logger.info(`Deleted documents from ${collectionName}`);
+        } catch (error) {
+            this.recordFailure();
+            throw error;
+        }
+    }
+
+    async search(
+        collectionName: CollectionName, 
+        query: string, 
+        options: { nResults?: number; where?: Record<string, any> } = {}
+    ): Promise<{
+        documents: string[];
+        metadatas: Record<string, any>[];
+        distances: number[];
+        ids: string[];
+    }> {
+        if (this.isCircuitOpen()) {
+            return { documents: [], metadatas: [], distances: [], ids: [] };
+        }
         try {
             const collection = await this.getOrCreateCollection(collectionName);
             const results = await collection.query({
                 queryTexts: [query],
                 nResults: options.nResults || 10,
-                where: options.where
+                where: options.where as any
             });
             this.recordSuccess();
             return {
-                documents: results.documents[0] || [],
-                metadatas: results.metadatas[0] || [],
-                distances: results.distances ? results.distances[0] : [],
-                ids: results.ids[0] || []
+                documents: (results.documents[0] || []).filter((d): d is string => d !== null).map(d => d || ''),
+                metadatas: (results.metadatas[0] || []).filter((m): m is Record<string, any> => m !== null).map(m => m || {}),
+                distances: (results.distances ? results.distances[0] || [] : []).filter((d): d is number => d !== null),
+                ids: (results.ids[0] || []).filter((id): id is string => id !== null).map(id => id || '')
             };
         } catch (error) {
             this.recordFailure();
+            logger.error(`Search failed for ${collectionName}:`, error);
             return { documents: [], metadatas: [], distances: [], ids: [] };
         }
+    }
+
+    async searchWithFilters(
+        collectionName: CollectionName,
+        query: string,
+        filters: {
+            equipement?: string;
+            zone?: string;
+            pupitre?: string;
+            profil?: string;
+            tags?: string[];
+        },
+        nResults: number = 10
+    ): Promise<{
+        documents: string[];
+        metadatas: Record<string, any>[];
+        distances: number[];
+        ids: string[];
+    }> {
+        const where: Record<string, any> = {};
+        if (filters.equipement) where.equipement = filters.equipement;
+        if (filters.zone) where.zone = filters.zone;
+        if (filters.pupitre) where.pupitre = filters.pupitre;
+        if (filters.profil) where.profils_cibles = { $contains: filters.profil };
+        if (filters.tags && filters.tags.length) where.tags = { $in: filters.tags };
+        
+        return this.search(collectionName, query, { nResults, where });
+    }
+
+    async getDocuments(
+        collectionName: CollectionName,
+        where?: Record<string, any>,
+        limit: number = 100
+    ): Promise<{
+        documents: string[];
+        metadatas: Record<string, any>[];
+        ids: string[];
+    }> {
+        if (this.isCircuitOpen()) {
+            return { documents: [], metadatas: [], ids: [] };
+        }
+        try {
+            const collection = await this.getOrCreateCollection(collectionName);
+            const results = await collection.get({ where: where as any, limit });
+            
+            // Filtrer et nettoyer les valeurs null/undefined
+            const documents = (results.documents || []).map(d => d || '');
+            const metadatas = (results.metadatas || []).map(m => m !== null ? m : {});
+            const ids = (results.ids || []).map(id => id || '');
+            
+            return {
+                documents,
+                metadatas,
+                ids
+            };
+        } catch (error) {
+            this.recordFailure();
+            return { documents: [], metadatas: [], ids: [] };
+        }
+    }
+
+    async getCollectionStats(collectionName: CollectionName): Promise<{
+        count: number;
+        metadata: Record<string, any>;
+        name: string;
+    }> {
+        const collection = await this.getOrCreateCollection(collectionName);
+        const count = await collection.count();
+        const metadata = await (collection as any).metadata;
+        const config = (ChromaCollections as any)[collectionName];
+        return { count, metadata: metadata || config.metadata, name: config.name };
     }
 
     async getAllCollectionsStats(): Promise<any[]> {
@@ -190,5 +378,42 @@ export class ChromaDBManager {
             }
         }
         return stats;
+    }
+
+    async collectionExists(collectionName: CollectionName): Promise<boolean> {
+        try {
+            const config = (ChromaCollections as any)[collectionName];
+            await this.client.getCollection({
+                name: config.name,
+                embeddingFunction: this.embeddingFunction
+            });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    async clearAllCollections(): Promise<void> {
+        for (const [key, config] of Object.entries(ChromaCollections)) {
+            try {
+                const collection = await this.getOrCreateCollection(key as CollectionName);
+                const allDocs = await collection.get();
+                if (allDocs.ids && allDocs.ids.length > 0) {
+                    await collection.delete({ ids: allDocs.ids });
+                    logger.info(`Cleared ${allDocs.ids.length} documents from ${config.name}`);
+                }
+            } catch (error) {
+                logger.error(`Error clearing ${config.name}:`, error);
+            }
+        }
+        logger.info('All collections cleared');
+    }
+
+    async deleteCollection(collectionName: CollectionName): Promise<void> {
+        const config = (ChromaCollections as any)[collectionName];
+        if (!config) throw new Error(`Collection configuration not found for: ${collectionName}`);
+        await this.client.deleteCollection({ name: config.name });
+        this.collections.delete(collectionName);
+        logger.info(`Deleted collection: ${config.name}`);
     }
 }
