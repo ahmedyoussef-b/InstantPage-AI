@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
   // On marque chromadb comme externe pour éviter que Webpack ne tente de parser 
   // ses importations dynamiques (comme chromadb-default-embed depuis unpkg)
   serverExternalPackages: ['chromadb'],
+  // Autoriser l'origine de Firebase Studio pour éviter les blocages CORS en dev
+  experimental: {
+    allowedDevOrigins: ["6000-firebase-studio-1774323789446.cluster-fbfjltn375c6wqxlhoehbz44sk.cloudworkstations.dev"]
+  },
   images: {
     remotePatterns: [
       {

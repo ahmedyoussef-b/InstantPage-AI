@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview API Route /api/documents/[id]/text - Mise à jour du texte extrait dans ChromaDB.
  */
@@ -37,7 +38,7 @@ export async function PUT(
     const metadata = searchRes.metadatas[0] || {};
 
     // Mettre à jour le document principal dans ChromaDB
-    await manager.addDocuments(collectionName, [{
+    await manager.upsertDocuments(collectionName, [{
       id: id,
       content: text,
       metadata: { 

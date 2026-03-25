@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview API Route /api/documents/[id]/metadata - Mise à jour des métadonnées dans ChromaDB.
  */
@@ -47,7 +48,7 @@ export async function PUT(
       }
     });
 
-    await manager.addDocuments(collectionName, [{
+    await manager.upsertDocuments(collectionName, [{
       id: id,
       content,
       metadata: { 
