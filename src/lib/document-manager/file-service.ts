@@ -1,6 +1,7 @@
+
 /**
  * @fileOverview Service de gestion de fichiers avancé - Elite 32.
- * Gère la surveillance temps réel, l'arborescence, le renommage et la création.
+ * Gère la surveillance temps réel, l'arborescence et l'orchestration du pipeline RAG.
  */
 
 import fs from 'fs/promises';
@@ -80,6 +81,7 @@ export class FileSystemService extends EventEmitter {
           }
         } catch (error) {
           console.error(`[SYNC] Échec pour ${filePath}:`, error);
+          this.emit('sync-error', { path: filePath, error: String(error) });
         }
       }
       
@@ -92,17 +94,42 @@ export class FileSystemService extends EventEmitter {
       const stats = await fs.stat(filePath);
       if (stats.isDirectory()) return;
 
+      this.emit('sync-start', { path: filePath, stage: 'DÉTECTION' });
+
       const collection = this.getCollectionFromPath(filePath);
       const appUrl = process.env.APP_URL || 'http://localhost:3000';
-      const content = await fs.readFile(filePath, 'utf-8');
+      const ext = path.extname(filePath).toLowerCase();
+      const isImage = ['.jpg', '.jpeg', '.png', '.png'].includes(ext);
       
-      await fetch(`${appUrl}/api/documents/vectorize`, {
+      let content = '';
+      if (!isImage) {
+        content = await fs.readFile(filePath, 'utf-8');
+        this.emit('sync-start', { path: filePath, stage: 'LECTURE' });
+      } else {
+        this.emit('sync-start', { path: filePath, stage: 'OCR' });
+      }
+
+      const res = await fetch(`${appUrl}/api/documents/vectorize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath, collection, content })
+        body: JSON.stringify({ filePath, collection, content, isImage })
       });
-    } catch (e) {
-      // Le fichier a peut-être été supprimé entre-temps
+
+      if (res.ok) {
+        const data = await res.json();
+        this.emit('sync-complete', { 
+          path: filePath, 
+          success: true, 
+          chunks: data.chunks,
+          message: isImage ? 'Image analysée et indexée' : 'Document vectorisé'
+        });
+      } else {
+        const err = await res.json();
+        throw new Error(err.error || 'Erreur pipeline');
+      }
+    } catch (e: any) {
+      console.error(`[SYNC] Erreur processing ${filePath}:`, e);
+      this.emit('sync-error', { path: filePath, error: e.message });
     }
   }
 
@@ -117,6 +144,7 @@ export class FileSystemService extends EventEmitter {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ documentId, collection })
       });
+      this.emit('sync-complete', { path: filePath, type: 'unlink', success: true });
     } catch (e) {
       console.error(`[SYNC] Erreur API suppression:`, e);
     }
@@ -133,26 +161,17 @@ export class FileSystemService extends EventEmitter {
     return relative.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
   }
 
-  /**
-   * Renomme un fichier ou un dossier
-   */
   async renameItem(oldPath: string, newName: string): Promise<string> {
     const dir = path.dirname(oldPath);
     const newPath = path.join(dir, newName);
-    
-    // Protection : Ne pas renommer les dossiers racines
     const relative = path.relative(DOCUMENTS_ROOT, oldPath);
     if (!relative.includes(path.sep) && FOLDER_NAMES.includes(relative)) {
       throw new Error("Les dossiers racines des collections ne peuvent pas être renommés.");
     }
-
     await fs.rename(oldPath, newPath);
     return newPath;
   }
 
-  /**
-   * Crée un nouveau dossier
-   */
   async createDirectory(parentPath: string, name: string): Promise<string> {
     const newPath = path.join(parentPath, name);
     await fs.mkdir(newPath, { recursive: true });
@@ -166,9 +185,7 @@ export class FileSystemService extends EventEmitter {
       try {
         const node = await this.buildNode(folderPath, folder);
         tree.push(node);
-      } catch (e) {
-        // Silently skip missing folders
-      }
+      } catch (e) {}
     }
     return tree;
   }
@@ -176,7 +193,6 @@ export class FileSystemService extends EventEmitter {
   private async buildNode(dirPath: string, name: string): Promise<FileNode> {
     const stats = await fs.stat(dirPath);
     const isDirectory = stats.isDirectory();
-    
     const node: FileNode = {
       name,
       path: dirPath,
@@ -184,7 +200,6 @@ export class FileSystemService extends EventEmitter {
       modifiedAt: stats.mtime,
       size: stats.size
     };
-    
     if (isDirectory) {
       const children = await fs.readdir(dirPath);
       node.children = await Promise.all(
@@ -193,19 +208,16 @@ export class FileSystemService extends EventEmitter {
           return this.buildNode(childPath, child);
         })
       );
-      
       node.children.sort((a, b) => {
         if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
     }
-    
     return node;
   }
 }
 
 let instance: FileSystemService | null = null;
-
 export const fileService = (() => {
   if (!instance) {
     instance = new FileSystemService();

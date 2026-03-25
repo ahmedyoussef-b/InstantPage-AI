@@ -2,15 +2,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Wifi, WifiOff, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Wifi, WifiOff, CheckCircle, AlertCircle, Loader2, ScanLine, Layers, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface SyncEvent {
   path?: string;
   type: string;
+  stage?: string;
   timestamp?: number;
   success?: boolean;
   error?: string;
+  chunks?: number;
+  message?: string;
 }
 
 interface SyncStatusProps {
@@ -28,11 +31,14 @@ export function SyncStatus({ events, isConnected }: SyncStatusProps) {
     }
   }, [events]);
 
-  const isSyncing = events.some(e => e.type === 'sync-start');
+  const activeSync = events.find(e => e.type === 'sync-start');
+  const isSyncing = !!activeSync;
   const hasError = events.some(e => e.type === 'sync-error' || e.error);
 
   const getStatusIcon = () => {
     if (!isConnected) return <WifiOff className="w-4 h-4 text-red-500" />;
+    if (activeSync?.stage === 'OCR') return <ScanLine className="w-4 h-4 text-purple-400 animate-pulse" />;
+    if (activeSync?.stage === 'VECTORISATION') return <Layers className="w-4 h-4 text-blue-400 animate-spin" />;
     if (isSyncing) return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
     if (hasError) return <AlertCircle className="w-4 h-4 text-yellow-500" />;
     return <Wifi className="w-4 h-4 text-green-500" />;
@@ -40,6 +46,7 @@ export function SyncStatus({ events, isConnected }: SyncStatusProps) {
 
   const getStatusText = () => {
     if (!isConnected) return 'DÉCONNECTÉ';
+    if (activeSync?.stage) return `${activeSync.stage} EN COURS...`;
     if (isSyncing) return 'SYNCHRONISATION EN COURS...';
     if (hasError) return 'ERREUR DÉTECTÉE';
     if (lastSync) return `DERNÈRE SYNC: ${lastSync.toLocaleTimeString()}`;
@@ -77,17 +84,23 @@ export function SyncStatus({ events, isConnected }: SyncStatusProps) {
         <div className="mt-4 space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar animate-in slide-in-from-bottom-2">
           {events.map((event, i) => (
             <div key={i} className="text-[10px] flex items-start gap-3 p-3 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
-              {event.type === 'sync-start' && <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />}
-              {event.type === 'sync-complete' && <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />}
-              {(event.type === 'sync-error' || event.error) && <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
-              <div className="flex-1 min-w-0">
-                <p className="font-black text-gray-400 uppercase tracking-tighter mb-0.5">{event.type}</p>
-                <p className="text-gray-200 truncate font-mono">{event.path || 'Processus système'}</p>
-                {event.error && <p className="text-red-400 mt-1 font-bold italic">{event.error}</p>}
+              <div className="mt-0.5">
+                {event.type === 'sync-start' && <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />}
+                {event.type === 'sync-complete' && <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />}
+                {(event.type === 'sync-error' || event.error) && <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
               </div>
-              {event.timestamp && (
-                <span className="text-gray-600 font-bold">{new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-black text-gray-400 uppercase tracking-tighter">{event.type === 'sync-start' ? (event.stage || 'PROCESS') : event.type}</p>
+                  {event.timestamp && (
+                    <span className="text-gray-600 font-bold">{new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                  )}
+                </div>
+                <p className="text-gray-200 truncate font-mono">{event.path ? event.path.split(/[\\/]/).pop() : 'Système'}</p>
+                {event.chunks && <p className="text-blue-400 mt-1 font-bold">Indexé: {event.chunks} segments vectoriels</p>}
+                {event.error && <p className="text-red-400 mt-1 font-bold italic">{event.error}</p>}
+                {event.message && <p className="text-green-500/80 mt-1 font-medium">{event.message}</p>}
+              </div>
             </div>
           ))}
         </div>
