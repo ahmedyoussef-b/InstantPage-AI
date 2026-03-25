@@ -8,9 +8,7 @@ import {
   Trash2, 
   Download, 
   Check,
-  Cpu,
-  Layers,
-  Target
+  Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,13 +46,23 @@ export default function DocumentDetailPage() {
       
       setData(result);
       setEditedText(result.vector?.content || result.file?.content || '');
-      setEditedMetadata(result.vector?.metadata || {
-        titre: result.file.name,
-        type: 'document_technique',
-        categorie: 'general',
-        profils_cibles: [],
-        tags: [],
-        version: '1.0'
+      
+      // Adaptation des métadonnées pour le composant MetadataPanel
+      const baseMeta = result.vector?.metadata || {};
+      setEditedMetadata({
+        titre: baseMeta.titre || result.file.name,
+        type: baseMeta.type || 'document_technique',
+        categorie: baseMeta.categorie || 'general',
+        equipement: baseMeta.equipement || '',
+        zone: baseMeta.zone || '',
+        pupitre: baseMeta.pupitre || '',
+        profils_cibles: typeof baseMeta.profils_cibles === 'string' 
+          ? baseMeta.profils_cibles.split(',').map((s: string) => s.trim())
+          : (baseMeta.profils_cibles || []),
+        tags: typeof baseMeta.tags === 'string'
+          ? baseMeta.tags.split(',').map((s: string) => s.trim())
+          : (baseMeta.tags || []),
+        version: baseMeta.version || '1.0'
       });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Erreur", description: e.message });
@@ -67,7 +75,6 @@ export default function DocumentDetailPage() {
     loadDetails();
   }, [loadDetails]);
 
-  // Écouter les mises à jour de synchronisation via SSE
   useEffect(() => {
     if (lastEvent && lastEvent.path === data?.file?.path) {
       if (lastEvent.type === 'sync-complete') {
@@ -86,7 +93,12 @@ export default function DocumentDetailPage() {
       const res = await fetch('/api/documents/vectorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath: data.file.path, collection: data.collection })
+        body: JSON.stringify({ 
+          filePath: data.file.path, 
+          collection: data.collection,
+          metadata: editedMetadata,
+          content: editedText
+        })
       });
       if (!res.ok) throw new Error('Échec de la vectorisation');
       toast({ title: "Synchronisation lancée", description: "Le pipeline RAG traite vos modifications." });
@@ -99,8 +111,8 @@ export default function DocumentDetailPage() {
   const handleSaveText = async () => {
     setSaving(true);
     try {
-      // Simulation de sauvegarde du texte (dans un cas réel, on mettrait à jour le fichier ou une DB)
-      toast({ title: "Texte mis à jour", description: "La version extraite a été modifiée localement." });
+      // Pour ce prototype, on synchronise directement avec ChromaDB
+      await handleSync();
       setIsEditingText(false);
     } catch (e) {
       toast({ variant: "destructive", title: "Erreur", description: "Impossible de sauvegarder le texte." });
@@ -112,8 +124,7 @@ export default function DocumentDetailPage() {
   const handleSaveMetadata = async () => {
     setSaving(true);
     try {
-      // Simulation de sauvegarde des métadonnées
-      toast({ title: "Métadonnées sauvegardées", description: "L'IA utilisera ces informations pour le RAG." });
+      await handleSync();
       setIsEditingMetadata(false);
     } catch (e) {
       toast({ variant: "destructive", title: "Erreur", description: "Impossible de sauvegarder les métadonnées." });
@@ -209,6 +220,7 @@ export default function DocumentDetailPage() {
           <ExtractionPanel 
             extractedText={editedText}
             ocrConfidence={data.vector?.metadata?.ocrConfidence}
+            metadata={data.vector?.metadata || {}}
             isEditing={isEditingText}
             onEdit={() => setIsEditingText(true)}
             onSave={handleSaveText}
@@ -228,7 +240,22 @@ export default function DocumentDetailPage() {
             isEditing={isEditingMetadata}
             onEdit={() => setIsEditingMetadata(true)}
             onSave={handleSaveMetadata}
-            onCancel={() => { setIsEditingMetadata(false); setEditedMetadata(data.vector?.metadata || editedMetadata); }}
+            onCancel={() => { 
+              setIsEditingMetadata(false); 
+              // Reset
+              const baseMeta = data.vector?.metadata || {};
+              setEditedMetadata({
+                titre: baseMeta.titre || data.file.name,
+                type: baseMeta.type || 'document_technique',
+                categorie: baseMeta.categorie || 'general',
+                equipement: baseMeta.equipement || '',
+                zone: baseMeta.zone || '',
+                pupitre: baseMeta.pupitre || '',
+                profils_cibles: typeof baseMeta.profils_cibles === 'string' ? baseMeta.profils_cibles.split(',') : (baseMeta.profils_cibles || []),
+                tags: typeof baseMeta.tags === 'string' ? baseMeta.tags.split(',') : (baseMeta.tags || []),
+                version: baseMeta.version || '1.0'
+              });
+            }}
             onChange={setEditedMetadata}
             saving={saving}
           />
@@ -249,12 +276,4 @@ export default function DocumentDetailPage() {
       </footer>
     </div>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
