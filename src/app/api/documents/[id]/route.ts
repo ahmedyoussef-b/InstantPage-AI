@@ -5,9 +5,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { stat, readFile, unlink } from 'fs/promises';
+import { stat, readFile, rm } from 'fs/promises';
 import path from 'path';
-import { findDocumentById, generateId } from '@/lib/document-manager/document-utils';
+import { findDocumentById } from '@/lib/document-manager/document-utils';
 import { ChromaDBManager } from '@/ai/vector/chromadb-manager';
 import { COLLECTION_MAPPING, DOCUMENTS_ROOT } from '@/lib/document-manager/config';
 
@@ -113,32 +113,28 @@ export async function DELETE(
     const { id } = await params;
     const documentPath = await findDocumentById(id);
     
-    // 1. Suppression physique
+    // 1. Suppression physique (Fichier ou Dossier)
     if (documentPath) {
-      await unlink(documentPath).catch(e => console.warn(`[API][DELETE] Fichier déjà absent: ${documentPath}`));
+      await rm(documentPath, { recursive: true, force: true }).catch(e => console.warn(`[API][DELETE] Fichier déjà absent: ${documentPath}`));
     }
     
     // 2. Suppression vectorielle (Document principal + chunks)
     const manager = ChromaDBManager.getInstance();
-    const stats = await manager.getAllCollectionsStats();
+    const allStats = await manager.getAllCollectionsStats();
     
-    // On parcourt toutes les collections pour être sûr de tout purger
-    for (const coll of stats) {
+    const purgePromises = allStats.map(async (coll) => {
       try {
-        // Liste des IDs potentiels à supprimer (ID principal + chunks probables)
-        // Note: Dans une version plus poussée, on listerait les IDs via metadata
         const idsToDelete = [id];
-        for (let i = 0; i < 100; i++) {
+        for (let i = 0; i < 150; i++) {
           idsToDelete.push(`${id}_chunk_${i}`);
         }
-        
         await manager.deleteDocuments(coll.id as any, idsToDelete);
-      } catch (e) {
-        // Ignorer les erreurs si la collection ne contient pas l'ID
-      }
-    }
+      } catch (e) {}
+    });
     
-    return NextResponse.json({ success: true, message: "Document et vecteurs purgés." });
+    await Promise.allSettled(purgePromises);
+    
+    return NextResponse.json({ success: true, message: "Document et vecteurs purgés de toutes les collections." });
     
   } catch (error: any) {
     console.error('[API][DELETE] Échec purge:', error);
